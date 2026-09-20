@@ -1,0 +1,200 @@
+# Example values for the dev environment.
+# Copy this file to terraform.tfvars and replace all placeholder values before deployment.
+# Keep secrets out of source control and use Azure DevOps variable groups / Key Vault instead.
+# Placeholder format: <REPLACE_WITH_...>
+
+location    = "japaneast"
+environment = "dev"
+
+tags = {
+  environment = "dev"
+  managed_by  = "terraform"
+  owner       = "platform-team"
+  cost_center = "engineering"
+}
+
+resource_groups = {
+  platform = {
+    name = "rg-platform-jpe-dev"
+    tags = {
+      workload = "platform"
+    }
+  }
+  app = {
+    name = "rg-app-jpe-dev"
+    tags = {
+      workload = "app"
+    }
+  }
+  data = {
+    name = "rg-data-jpe-dev"
+    tags = {
+      workload = "data"
+    }
+  }
+}
+
+storage_accounts = {
+  appdata = {
+    name                     = "stappjpe001dev"
+    resource_group_name      = "rg-platform-jpe-dev"
+    account_tier             = "Standard"
+    account_replication_type = "LRS"
+    tags = {
+      workload = "shared"
+    }
+  }
+}
+
+vnets = {
+  hub = {
+    name                = "vnet-hub-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    address_space       = ["10.10.0.0/16"]
+    subnets = {
+      bastion = {
+        name             = "AzureBastionSubnet"
+        address_prefixes = ["10.10.0.0/24"]
+      }
+      appgw = {
+        name             = "appgw-subnet"
+        address_prefixes = ["10.10.1.0/24"]
+      }
+      admin = {
+        name             = "admin-subnet"
+        address_prefixes = ["10.10.2.0/24"]
+      }
+    }
+    tags = {
+      role = "hub"
+    }
+  }
+
+  spoke = {
+    name                = "vnet-spoke-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    address_space       = ["10.20.0.0/16"]
+    subnets = {
+      frontend = {
+        name             = "frontend-subnet"
+        address_prefixes = ["10.20.0.0/24"]
+      }
+      backend = {
+        name             = "backend-subnet"
+        address_prefixes = ["10.20.1.0/24"]
+      }
+      data = {
+        name             = "data-subnet"
+        address_prefixes = ["10.20.2.0/24"]
+      }
+    }
+    tags = {
+      role = "spoke"
+    }
+  }
+}
+
+network_security_groups = {
+  frontend = {
+    name                = "nsg-frontend-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    security_rules = {
+      allow_http = {
+        name                       = "AllowHTTP"
+        priority                   = 100
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "80"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+      }
+    }
+    tags = {
+      tier = "frontend"
+    }
+  }
+}
+
+load_balancers = {
+  backend = {
+    name                = "ilb-backend-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    sku                 = "Standard"
+    frontend_ip_configuration = {
+      name               = "lb-frontend"
+      subnet_id          = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/<REPLACE_WITH_RESOURCE_GROUP>/providers/Microsoft.Network/virtualNetworks/<REPLACE_WITH_VNET_NAME>/subnets/backend-subnet"
+      private_ip_address = "10.20.1.10"
+    }
+    backend_address_pool = {
+      name = "backend-pool"
+    }
+    health_probe = {
+      name     = "health-probe"
+      protocol = "Tcp"
+      port     = 1433
+    }
+    lb_rule = {
+      name                           = "sql-rule"
+      frontend_ip_configuration_name = "lb-frontend"
+      backend_address_pool_name      = "backend-pool"
+      frontend_port                  = 1433
+      backend_port                   = 1433
+      protocol                       = "Tcp"
+      load_distribution              = "Default"
+    }
+    tags = {
+      tier = "backend"
+    }
+  }
+}
+
+log_analytics_workspaces = {
+  shared = {
+    name                = "law-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    sku                 = "PerGB2018"
+    retention_in_days   = 30
+    tags = {
+      role = "monitoring"
+    }
+  }
+}
+
+application_insights = {
+  app = {
+    name                = "appi-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    workspace_id        = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/<REPLACE_WITH_RESOURCE_GROUP>/providers/Microsoft.OperationalInsights/workspaces/<REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_NAME>"
+    application_type    = "web"
+    tags = {
+      role = "monitoring"
+    }
+  }
+}
+
+bastions = {
+  admin = {
+    name                 = "bas-jpe-dev"
+    resource_group_name  = "rg-platform-jpe-dev"
+    location             = "japaneast"
+    subnet_id            = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/<REPLACE_WITH_RESOURCE_GROUP>/providers/Microsoft.Network/virtualNetworks/<REPLACE_WITH_HUB_VNET_NAME>/subnets/AzureBastionSubnet"
+    public_ip_address_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/<REPLACE_WITH_RESOURCE_GROUP>/providers/Microsoft.Network/publicIPAddresses/<REPLACE_WITH_BASTION_PUBLIC_IP_NAME>"
+    tags = {
+      role = "admin"
+    }
+  }
+}
+
+# Required future inputs for app and private-access modules
+# app_service_plan = {}
+# linux_web_apps = {}
+# sql_servers = {}
+# sql_databases = {}
+# private_dns_zones = {}
+# private_endpoints = {}

@@ -1,0 +1,96 @@
+# Stage environment example values.
+# Copy this file to terraform.tfvars and replace placeholders with real values.
+
+location    = "japaneast"
+environment = "stage"
+
+tags = {
+  environment = "stage"
+  managed_by  = "terraform"
+  owner       = "platform-team"
+  cost_center = "engineering"
+}
+
+resource_groups = {
+  platform = {
+    name = "rg-platform-jpe-stage"
+    tags = {
+      workload = "platform"
+    }
+  }
+}
+
+storage_accounts = {
+  appdata = {
+    name                     = "stappjpe001stage"
+    resource_group_name      = "rg-platform-jpe-stage"
+    account_tier             = "Standard"
+    account_replication_type = "LRS"
+    tags = {
+      workload = "shared"
+    }
+  }
+}
+
+vnets = {
+  hub = {
+    name                = "vnet-hub-jpe-stage"
+    resource_group_name = "rg-platform-jpe-stage"
+    address_space       = ["10.30.0.0/16"]
+    subnets = {
+      bastion = {
+        name             = "AzureBastionSubnet"
+        address_prefixes = ["10.30.0.0/24"]
+      }
+      appgw = {
+        name             = "appgw-subnet"
+        address_prefixes = ["10.30.1.0/24"]
+      }
+    }
+    tags = {
+      role = "hub"
+    }
+  }
+  spoke = {
+    name                = "vnet-spoke-jpe-stage"
+    resource_group_name = "rg-platform-jpe-stage"
+    address_space       = ["10.40.0.0/16"]
+    subnets = {
+      frontend = {
+        name             = "frontend-subnet"
+        address_prefixes = ["10.40.0.0/24"]
+      }
+      backend = {
+        name             = "backend-subnet"
+        address_prefixes = ["10.40.1.0/24"]
+      }
+    }
+    tags = {
+      role = "spoke"
+    }
+  }
+}
+
+network_security_groups = {
+  frontend = {
+    name                = "nsg-frontend-jpe-stage"
+    resource_group_name = "rg-platform-jpe-stage"
+    location            = "japaneast"
+    security_rules = {
+      allow_http = {
+        name                       = "AllowHTTP"
+        priority                   = 100
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "80"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+      }
+    }
+    tags = {
+      tier = "frontend"
+    }
+  }
+}
