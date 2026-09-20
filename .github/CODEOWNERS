@@ -1,0 +1,11 @@
+# Default owners for all repository files
+* @platform-team
+
+# Infrastructure ownership
+/env/** @platform-team
+/modules/** @platform-team
+/.azuredevops/** @platform-team
+
+# Documentation and governance files
+/README.md @platform-team
+/docs/** @platform-team

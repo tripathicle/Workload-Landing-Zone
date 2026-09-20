@@ -1,0 +1,208 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  TF_VERSION: '1.8.5'
+  TF_IN_AUTOMATION: 'true'
+  TF_STATE_LOCATION: 'japaneast'
+  TF_STATE_RESOURCE_GROUP: 'rg-tfstate-jpe-shared'
+  TF_STATE_STORAGE_ACCOUNT: 'sttfstatejpeprod001'
+  TF_STATE_CONTAINER: 'tfstate'
+  TF_STATE_KEY: 'dev.terraform.tfstate'
+  INFRACOST_API_KEY: '$(INFRACOST_API_KEY)'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Bootstrap_Terraform_State
+    jobs:
+      - job: bootstrap_state
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: AzureCLI@2
+            displayName: Bootstrap Terraform state storage
+            inputs:
+              azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+              scriptType: bash
+              scriptLocation: scriptPath
+              scriptPath: '$(Build.SourcesDirectory)/.azuredevops/scripts/bootstrap-tfstate.sh'
+              arguments: >
+                --resource-group "$(TF_STATE_RESOURCE_GROUP)"
+                --location "$(TF_STATE_LOCATION)"
+                --storage-account "$(TF_STATE_STORAGE_ACCOUNT)"
+                --container "$(TF_STATE_CONTAINER)"
+
+  - stage: Validate
+    dependsOn: Bootstrap_Terraform_State
+    condition: succeeded()
+    jobs:
+      - job: terraform_validate
+        steps:
+          - checkout: self
+            clean: true
+
+          - task: AzureCLI@2
+            displayName: Azure Login check
+            inputs:
+              azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az account show --output table
+
+          - task: UseTerraform@0
+            displayName: Install Terraform
+            inputs:
+              version: '$(TF_VERSION)'
+              terraformDirectory: '$(Agent.ToolsDirectory)/terraform'
+
+          - bash: |
+              set -euo pipefail
+              cd "$(Build.SourcesDirectory)/env/dev"
+              terraform fmt -check -recursive
+              terraform init -backend=false -input=false
+              terraform validate
+            displayName: Validate Dev Terraform
+
+          - bash: |
+              set -euo pipefail
+              curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+              tflint --init
+              tflint --recursive --format compact
+            displayName: TFLint
+            continueOnError: true
+
+          - bash: |
+              set -euo pipefail
+              python3 -m pip install --upgrade pip >/dev/null
+              python3 -m pip install checkov >/dev/null
+              checkov --directory "$(Build.SourcesDirectory)" --quiet || true
+            displayName: Checkov Security Scan
+            continueOnError: true
+
+          - bash: |
+              set -euo pipefail
+              curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+              tfsec . --format default --soft-fail || true
+            displayName: tfsec Scan
+            continueOnError: true
+
+          - bash: |
+              set -euo pipefail
+              curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+              trivy fs --security-checks vuln,config --severity HIGH,CRITICAL --exit-code 0 . || true
+            displayName: Trivy Scan
+            continueOnError: true
+
+          - bash: |
+              set -euo pipefail
+              curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+              trufflehog filesystem --directory . || true
+            displayName: TruffleHog Secret Scan
+            continueOnError: true
+
+          - bash: |
+              set -euo pipefail
+              if [ -n "$(INFRACOST_API_KEY)" ]; then
+                curl -sSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | bash
+                cd "$(Build.SourcesDirectory)"
+                infracost breakdown --path . --format json --out-file infracost.json || true
+              else
+                echo "Skipping Infracost because INFRACOST_API_KEY is not configured."
+              fi
+            displayName: Infracost Cost Estimate
+            continueOnError: true
+
+  - stage: Stage
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: stage_deploy
+        environment: stage
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: UseTerraform@0
+                  displayName: Install Terraform
+                  inputs:
+                    version: '$(TF_VERSION)'
+                    terraformDirectory: '$(Agent.ToolsDirectory)/terraform'
+                - bash: |
+                    set -euo pipefail
+                    cd "$(Build.SourcesDirectory)/env/stage"
+                    terraform init \
+                      -input=false \
+                      -backend-config="resource_group_name=$(TF_STATE_RESOURCE_GROUP)" \
+                      -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+                      -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                      -backend-config="key=stage.terraform.tfstate"
+                    terraform plan -input=false -var-file=terraform.tfvars -out=tfplan
+                    terraform apply -auto-approve -input=false tfplan
+                  displayName: Deploy Stage Environment
+                  env:
+                    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+                    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+                    ARM_TENANT_ID: $(ARM_TENANT_ID)
+                    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+
+  - stage: Production_Approval
+    dependsOn: Stage
+    condition: succeeded()
+    jobs:
+      - job: manual_validation
+        pool: server
+        steps:
+          - task: ManualValidation@0
+            displayName: Approve Production Deployment
+            timeoutInMinutes: 1440
+            instructions: |
+              Please review the stage deployment output and approve or reject this production deployment.
+            onTimeout: 'reject'
+
+  - stage: Prod
+    dependsOn: Production_Approval
+    condition: succeeded()
+    jobs:
+      - deployment: prod_deploy
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: UseTerraform@0
+                  displayName: Install Terraform
+                  inputs:
+                    version: '$(TF_VERSION)'
+                    terraformDirectory: '$(Agent.ToolsDirectory)/terraform'
+                - bash: |
+                    set -euo pipefail
+                    cd "$(Build.SourcesDirectory)/env/prod"
+                    terraform init \
+                      -input=false \
+                      -backend-config="resource_group_name=$(TF_STATE_RESOURCE_GROUP)" \
+                      -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+                      -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                      -backend-config="key=prod.terraform.tfstate"
+                    terraform plan -input=false -var-file=terraform.tfvars -out=tfplan
+                    terraform apply -auto-approve -input=false tfplan
+                  displayName: Deploy Prod Environment
+                  env:
+                    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+                    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+                    ARM_TENANT_ID: $(ARM_TENANT_ID)
+                    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)

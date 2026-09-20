@@ -1,0 +1,393 @@
+# This file is an example only.
+# Copy it to terraform.tfvars in the environment folder and replace placeholders before running terraform apply.
+# Do not commit real secrets to the repository.
+
+location    = "japaneast"
+environment = "dev"
+
+tags = {
+  environment = "dev"
+  managed_by  = "terraform"
+  owner       = "platform-team"
+  cost_center = "engineering"
+}
+
+resource_groups = {
+  platform = {
+    name = "rg-platform-jpe-dev"
+    tags = {
+      workload = "platform"
+    }
+  }
+}
+
+storage_accounts = {
+  appdata = {
+    name                     = "stappjpe001dev"
+    resource_group_name      = "rg-platform-jpe-dev"
+    account_tier             = "Standard"
+    account_replication_type = "LRS"
+    tags = {
+      workload = "shared"
+    }
+  }
+}
+
+vnets = {
+  hub = {
+    name                = "vnet-hub-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    address_space       = ["10.10.0.0/16"]
+    subnets = {
+      bastion = {
+        name             = "AzureBastionSubnet"
+        address_prefixes = ["10.10.0.0/24"]
+      }
+      appgw = {
+        name             = "appgw-subnet"
+        address_prefixes = ["10.10.1.0/24"]
+      }
+    }
+    tags = {
+      role = "hub"
+    }
+  }
+  spoke = {
+    name                = "vnet-spoke-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    address_space       = ["10.20.0.0/16"]
+    subnets = {
+      frontend = {
+        name             = "frontend-subnet"
+        address_prefixes = ["10.20.0.0/24"]
+      }
+      backend = {
+        name             = "backend-subnet"
+        address_prefixes = ["10.20.1.0/24"]
+      }
+    }
+    tags = {
+      role = "spoke"
+    }
+  }
+}
+
+app_service_plan = {
+  main = {
+    name                = "asp-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    os_type             = "Linux"
+    sku_name            = "B1"
+    tags = {
+      workload = "app"
+    }
+  }
+}
+
+linux_web_apps = {
+  web = {
+    name                = "app-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    service_plan_id     = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Web/serverfarms/asp-jpe-dev"
+    https_only          = true
+    site_config = {
+      always_on = true
+    }
+    tags = {
+      workload = "web"
+    }
+  }
+}
+
+sql_servers = {
+  primary = {
+    name                         = "sql-jpe-dev-001"
+    resource_group_name          = "rg-platform-jpe-dev"
+    location                     = "japaneast"
+    version                      = "12.0"
+    administrator_login          = "sqladminuser"
+    administrator_login_password = "<REPLACE_WITH_STRONG_PASSWORD>"
+    minimum_tls_version          = "1.2"
+    tags = {
+      workload = "data"
+    }
+  }
+}
+
+sql_databases = {
+  appdb = {
+    name      = "appdb"
+    server_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Sql/servers/sql-jpe-dev-001"
+    sku_name  = "Basic"
+    collation = "SQL_Latin1_General_CP1_CI_AS"
+    tags = {
+      workload = "data"
+    }
+  }
+}
+
+key_vaults = {
+  appkv = {
+    name                          = "kvjpeappdev001"
+    resource_group_name           = "rg-platform-jpe-dev"
+    location                      = "japaneast"
+    tenant_id                     = "<REPLACE_WITH_TENANT_ID>"
+    sku_name                      = "standard"
+    purge_protection_enabled      = true
+    soft_delete_retention_days    = 90
+    enable_rbac_authorization     = true
+    public_network_access_enabled = true
+    tags = {
+      workload = "security"
+    }
+  }
+}
+
+network_security_groups = {
+  frontend = {
+    name                = "nsg-frontend-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    security_rules = {
+      allow_http = {
+        name                       = "AllowHTTP"
+        priority                   = 100
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "80"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+      }
+      allow_https = {
+        name                       = "AllowHTTPS"
+        priority                   = 110
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "443"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+      }
+    }
+    tags = {
+      tier = "frontend"
+    }
+  }
+}
+
+load_balancers = {
+  backend = {
+    name                = "ilb-backend-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    sku                 = "Standard"
+    frontend_ip_configuration = {
+      name               = "lb-frontend"
+      subnet_id          = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-spoke-jpe-dev/subnets/backend-subnet"
+      private_ip_address = "10.20.1.10"
+    }
+    backend_address_pool = {
+      name = "backend-pool"
+    }
+    health_probe = {
+      name     = "health-probe"
+      protocol = "Tcp"
+      port     = 1433
+    }
+    lb_rule = {
+      name                           = "sql-rule"
+      frontend_ip_configuration_name = "lb-frontend"
+      backend_address_pool_name      = "backend-pool"
+      frontend_port                  = 1433
+      backend_port                   = 1433
+      protocol                       = "Tcp"
+      load_distribution              = "Default"
+    }
+    tags = {
+      tier = "backend"
+    }
+  }
+}
+
+log_analytics_workspaces = {
+  shared = {
+    name                = "law-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    sku                 = "PerGB2018"
+    retention_in_days   = 30
+    tags = {
+      role = "monitoring"
+    }
+  }
+}
+
+application_insights = {
+  app = {
+    name                = "appi-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    workspace_id        = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.OperationalInsights/workspaces/law-jpe-dev"
+    application_type    = "web"
+    tags = {
+      role = "monitoring"
+    }
+  }
+}
+
+application_gateways = {
+  appgw = {
+    name                = "agw-jpe-dev"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    sku = {
+      name     = "Standard_v2"
+      tier     = "Standard_v2"
+      capacity = 1
+    }
+    gateway_ip_configuration = {
+      name      = "gateway-ip-config"
+      subnet_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-hub-jpe-dev/subnets/appgw-subnet"
+    }
+    frontend_ip_configuration = {
+      name                 = "agw-frontend-ip"
+      public_ip_address_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/publicIPAddresses/pip-agw-jpe-dev"
+    }
+    frontend_port = {
+      name = "agw-http-port"
+      port = 80
+    }
+    http_listener = {
+      name                           = "http-listener"
+      frontend_ip_configuration_name = "agw-frontend-ip"
+      frontend_port_name             = "agw-http-port"
+      protocol                       = "Http"
+    }
+    request_routing_rule = {
+      name                       = "routing-rule"
+      rule_type                  = "Basic"
+      http_listener_name         = "http-listener"
+      backend_address_pool_name  = "frontend-pool"
+      backend_http_settings_name = "backend-http"
+    }
+    backend_address_pool = {
+      name = "frontend-pool"
+    }
+    backend_http_settings = {
+      name                  = "backend-http"
+      cookie_based_affinity = "Disabled"
+      port                  = 80
+      protocol              = "Http"
+      request_timeout       = 30
+    }
+    tags = {
+      role = "ingress"
+    }
+  }
+}
+
+network_interfaces = {
+  frontend_01 = {
+    name                = "nic-fe-01"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    ip_configuration = {
+      name                          = "ipconfig-fe-01"
+      subnet_id                     = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-spoke-jpe-dev/subnets/frontend-subnet"
+      private_ip_address_allocation = "Static"
+      private_ip_address            = "10.20.0.4"
+    }
+    tags = {
+      tier = "frontend"
+    }
+  }
+}
+
+linux_virtual_machines = {
+  frontend_01 = {
+    name                = "vm-fe-01"
+    resource_group_name = "rg-platform-jpe-dev"
+    location            = "japaneast"
+    size                = "Standard_F1als_v7"
+    admin_username      = "azureuser"
+    admin_password      = "<REPLACE_WITH_VM_PASSWORD>"
+    network_interface_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/networkInterfaces/nic-fe-01"
+    custom_data = <<-EOT
+      #!/bin/bash
+      apt-get update -y
+      apt-get install -y nginx
+      systemctl enable nginx
+      systemctl start nginx
+    EOT
+    os_disk = {
+      caching              = "ReadWrite"
+      storage_account_type = "Standard_LRS"
+    }
+    source_image_reference = {
+      publisher = "Canonical"
+      offer     = "0001-com-ubuntu-server-jammy"
+      sku       = "22_04-lts-gen2"
+      version   = "latest"
+    }
+    tags = {
+      tier = "frontend"
+    }
+  }
+}
+
+subnet_network_security_group_associations = {
+  frontend = {
+    subnet_id                 = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-spoke-jpe-dev/subnets/frontend-subnet"
+    network_security_group_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-frontend-jpe-dev"
+  }
+}
+
+private_dns_zones = {
+  sql = {
+    name                = "privatelink.database.windows.net"
+    resource_group_name = "rg-platform-jpe-dev"
+    tags = {
+      workload = "private-access"
+    }
+  }
+}
+
+private_endpoints = {
+  sql = {
+    name                = "pe-sql-jpe-dev"
+    location            = "japaneast"
+    resource_group_name = "rg-platform-jpe-dev"
+    subnet_id           = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-spoke-jpe-dev/subnets/data-subnet"
+    private_service_connection = {
+      name                           = "sql-connection"
+      private_connection_resource_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Sql/servers/sql-jpe-dev-001"
+      is_manual_connection           = false
+      subresource_names              = ["sqlServer"]
+    }
+    private_dns_zone_group = {
+      name                = "sql-dns-zone-group"
+      private_dns_zone_ids = ["/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/privateDnsZones/privatelink.database.windows.net"]
+    }
+    tags = {
+      workload = "data"
+    }
+  }
+}
+
+bastions = {
+  admin = {
+    name                 = "bas-jpe-dev"
+    resource_group_name  = "rg-platform-jpe-dev"
+    location             = "japaneast"
+    subnet_id            = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/virtualNetworks/vnet-hub-jpe-dev/subnets/AzureBastionSubnet"
+    public_ip_address_id = "/subscriptions/<REPLACE_WITH_SUBSCRIPTION_ID>/resourceGroups/rg-platform-jpe-dev/providers/Microsoft.Network/publicIPAddresses/pip-bastion-jpe-dev"
+    tags = {
+      role = "admin"
+    }
+  }
+}
