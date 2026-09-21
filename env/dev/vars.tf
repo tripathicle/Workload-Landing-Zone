@@ -405,8 +405,13 @@ variable "linux_virtual_machines" {
   }
 }
 
+# ============================================================
+# SUBNET -> NSG ASSOCIATIONS
+# ============================================================
+
 variable "subnet_nsg_associations" {
-  description = "Map of subnet names to NSG names. The child association module resolves the Azure IDs from upstream module outputs."
+  description = "Map of subnet-to-NSG associations. References use logical keys exposed by the network and NSG modules."
+
   type = map(object({
     subnet_name                 = string
     network_security_group_name = string
@@ -414,12 +419,14 @@ variable "subnet_nsg_associations" {
 
   validation {
     condition = alltrue([
-      for key, association in var.subnet_nsg_associations : length(trimspace(association.subnet_name)) > 0 && length(trimspace(association.network_security_group_name)) > 0
+      for key, association in var.subnet_nsg_associations :
+      length(trimspace(association.subnet_name)) > 0 &&
+      length(trimspace(association.network_security_group_name)) > 0
     ])
-    error_message = "Every subnet-to-NSG association must define both a valid subnet name and a valid NSG name."
+
+    error_message = "Each subnet-to-NSG association must define a non-empty subnet key and NSG key."
   }
 }
-
 variable "private_dns_zones" {
   description = "Private DNS zones used for Azure PaaS private access. VNet link relationships are resolved from the network module output by key."
   type = map(object({
