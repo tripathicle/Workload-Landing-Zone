@@ -4,15 +4,6 @@
 # - name: (Required) Private DNS zone name.
 # - resource_group_name: (Required) Resource group for the DNS zone.
 # - tags: (Optional) Resource tags.
-resource "azurerm_private_dns_zone" "this" {
-  for_each = var.private_dns_zones
-
-  name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
-}
-
 # Resource: azurerm_private_endpoint
 # Description: Creates a private endpoint for private connectivity to Azure Platform services.
 # ## Arguments Reference
@@ -23,6 +14,21 @@ resource "azurerm_private_dns_zone" "this" {
 # - private_service_connection: (Required) Private link connection configuration.
 # - private_dns_zone_group: (Optional) DNS zone group for private resolution.
 # - tags: (Optional) Resource tags.
+
+
+
+resource "azurerm_private_dns_zone" "this" {
+  for_each = var.private_dns_zones
+
+  name                = each.value.name
+  resource_group_name = each.value.resource_group_name
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
+}
+
 resource "azurerm_private_endpoint" "this" {
   for_each = var.private_endpoints
 
@@ -40,24 +46,36 @@ resource "azurerm_private_endpoint" "this" {
   }
 
   dynamic "private_dns_zone_group" {
-    for_each = each.value.private_dns_zone_group != null ? [each.value.private_dns_zone_group] : []
+    for_each = each.value.private_dns_zone_key != null ? [each.value.private_dns_zone_key] : []
+
     content {
-      name                 = private_dns_zone_group.value.name
-      private_dns_zone_ids = private_dns_zone_group.value.private_dns_zone_ids
+      name = "${each.key}-private-dns"
+
+      private_dns_zone_ids = [
+        azurerm_private_dns_zone.this[
+          private_dns_zone_group.value
+        ].id
+      ]
     }
   }
 
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "this" {
-  for_each = toset(keys(var.private_dns_zones))
+  for_each = var.private_dns_zones
 
   name                  = "${each.key}-vnet-link"
-  resource_group_name   = var.private_dns_zones[each.key].resource_group_name
+  resource_group_name   = each.value.resource_group_name
   private_dns_zone_name = azurerm_private_dns_zone.this[each.key].name
-  virtual_network_id    = var.private_dns_zones[each.key].virtual_network_id
+  virtual_network_id    = each.value.virtual_network_id
   registration_enabled  = false
 
-  tags = merge(var.tags, lookup(var.private_dns_zones[each.key], "tags", {}))
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }

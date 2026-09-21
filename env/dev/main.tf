@@ -407,9 +407,9 @@ module "private_access" {
       name                = zone.name
       resource_group_name = zone.resource_group_name
 
-      # CHANGE:
-      # Resolve actual VNet ID from network module.
-      virtual_network_id = module.network.vnets[zone.vnet_key].id
+      virtual_network_id = module.network.vnets[
+        zone.vnet_key
+      ].id
 
       tags = zone.tags
     }
@@ -421,15 +421,21 @@ module "private_access" {
       location            = endpoint.location
       resource_group_name = endpoint.resource_group_name
 
-      # CHANGE:
-      # Resolve private endpoint subnet dynamically.
       subnet_id = module.network.subnets[
         "${endpoint.vnet_key}-${endpoint.subnet_key}"
       ].id
 
-      private_service_connection = endpoint.private_service_connection
+      private_service_connection = {
+        name                           = endpoint.private_service_connection.name
+        private_connection_resource_id = module.sql.sql_servers[
+          endpoint.sql_server_key
+        ].id
+        is_manual_connection = endpoint.private_service_connection.is_manual_connection
+        subresource_names    = endpoint.private_service_connection.subresource_names
+        request_message      = endpoint.private_service_connection.request_message
+      }
 
-      private_dns_zone_group = endpoint.private_dns_zone_group
+      private_dns_zone_key = endpoint.private_dns_zone_key
 
       tags = endpoint.tags
     }
@@ -483,4 +489,12 @@ module "bastion" {
   }
 
   tags = var.tags
+}
+
+module "sql" {
+  source = "../../modules/sql"
+
+  sql_servers   = var.sql_servers
+  sql_databases = var.sql_databases
+  tags          = var.tags
 }
