@@ -1,6 +1,9 @@
-output "application_gateways" {
+# ============================================================
+# APPLICATION GATEWAY OUTPUTS
+# ============================================================
 
-  description = "Map of Application Gateways"
+output "application_gateways" {
+  description = "Map of provisioned Application Gateway resources."
 
   value = {
     for key, gateway in azurerm_application_gateway.this : key => {

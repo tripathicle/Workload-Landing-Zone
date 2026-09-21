@@ -354,11 +354,11 @@ module "gateway" {
 
       sku = gateway.sku
 
+      waf_configuration = gateway.waf_configuration
+
       gateway_ip_configuration = {
         name = gateway.gateway_ip_configuration.name
 
-        # CHANGE:
-        # Resolve App Gateway subnet dynamically.
         subnet_id = module.network.subnets[
           "${gateway.vnet_key}-${gateway.subnet_key}"
         ].id
@@ -367,8 +367,6 @@ module "gateway" {
       frontend_ip_configuration = {
         name = gateway.frontend_ip_configuration.name
 
-        # CHANGE:
-        # Resolve App Gateway public IP from public-ip module.
         public_ip_address_id = module.public_ip.public_ips[
           gateway.public_ip_key
         ].id
@@ -381,24 +379,11 @@ module "gateway" {
       request_routing_rule = gateway.request_routing_rule
 
       backend_address_pool = {
-        name = gateway.backend_address_pool.name
-
-        # CHANGE:
-        # App Gateway sends traffic directly to frontend VM private IPs.
+        name         = gateway.backend_address_pool.name
         ip_addresses = local.frontend_vm_private_ips
       }
 
-      # CHANGE:
-      # Explicitly pass all health probe settings from environment config.
-      health_probe = {
-        name                = gateway.health_probe.name
-        protocol            = gateway.health_probe.protocol
-        port                = gateway.health_probe.port
-        path                = gateway.health_probe.path
-        interval            = gateway.health_probe.interval
-        timeout             = gateway.health_probe.timeout
-        unhealthy_threshold = gateway.health_probe.unhealthy_threshold
-      }
+      health_probe = gateway.health_probe
 
       backend_http_settings = gateway.backend_http_settings
 
