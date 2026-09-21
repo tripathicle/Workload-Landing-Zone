@@ -53,14 +53,8 @@ variable "network_security_groups" {
         length(trimspace(rule.name)) > 0 &&
         rule.priority >= 100 &&
         rule.priority <= 4096 &&
-        contains(
-          ["Inbound", "Outbound"],
-          rule.direction
-        ) &&
-        contains(
-          ["Allow", "Deny"],
-          rule.access
-        ) &&
+        contains(["Inbound", "Outbound"], rule.direction) &&
+        contains(["Allow", "Deny"], rule.access) &&
         contains(
           ["Tcp", "Udp", "Icmp", "Esp", "Ah", "*"],
           rule.protocol
@@ -68,24 +62,29 @@ variable "network_security_groups" {
       ])
     ])
 
-    error_message = "Each NSG rule must have a non-empty name, priority between 100 and 4096, valid direction (Inbound/Outbound), valid access (Allow/Deny), and a supported protocol (Tcp/Udp/Icmp/Esp/Ah/*)."
+    error_message = "Each NSG rule must have a valid name, priority between 100 and 4096, direction, access, and protocol."
+  }
+
+  validation {
+    condition = alltrue([
+      for nsg_key, nsg in var.network_security_groups :
+      length([
+        for rule_key, rule in nsg.security_rules :
+        rule.priority
+      ]) == length(distinct([
+        for rule_key, rule in nsg.security_rules :
+        rule.priority
+      ]))
+    ])
+
+    error_message = "Security rule priorities must be unique within each NSG."
   }
 }
-
-
-# ============================================================
-# Common Tags
-# ============================================================
-# CHANGE:
-# - Common tags remain controlled by the environment/root module.
-# - Individual NSGs can override/add resource-specific tags.
-# ============================================================
 
 variable "tags" {
   description = "Default tags applied to all network security groups."
 
-  type = map(string)
-
+  type    = map(string)
   default = {}
 
   validation {
@@ -95,6 +94,6 @@ variable "tags" {
       length(trimspace(value)) > 0
     ])
 
-    error_message = "Each tag key and value must be a non-empty string."
+    error_message = "Each tag key and value must be non-empty."
   }
 }
