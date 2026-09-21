@@ -1,4 +1,5 @@
 resource "azurerm_application_gateway" "this" {
+
   for_each = var.application_gateways
 
   name                = each.value.name
@@ -34,7 +35,7 @@ resource "azurerm_application_gateway" "this" {
   }
 
   backend_address_pool {
-    name        = each.value.backend_address_pool.name
+    name         = each.value.backend_address_pool.name
     ip_addresses = lookup(each.value.backend_address_pool, "ip_addresses", [])
   }
 
@@ -43,9 +44,9 @@ resource "azurerm_application_gateway" "this" {
     protocol            = each.value.health_probe.protocol
     port                = each.value.health_probe.port
     path                = each.value.health_probe.path
-    interval            = 30
-    timeout             = 30
-    unhealthy_threshold = 3
+    interval            = each.value.health_probe.interval
+    timeout             = each.value.health_probe.timeout
+    unhealthy_threshold = each.value.health_probe.unhealthy_threshold
   }
 
   backend_http_settings {
@@ -58,12 +59,15 @@ resource "azurerm_application_gateway" "this" {
   }
 
   request_routing_rule {
-    name                       = each.value.request_routing_rule.name
-    rule_type                 = each.value.request_routing_rule.rule_type
-    http_listener_name        = each.value.request_routing_rule.http_listener_name
-    backend_address_pool_name = each.value.request_routing_rule.backend_address_pool_name
-    backend_http_settings_name = each.value.request_routing_rule.backend_http_settings_name
+    name                        = each.value.request_routing_rule.name
+    rule_type                   = each.value.request_routing_rule.rule_type
+    http_listener_name          = each.value.request_routing_rule.http_listener_name
+    backend_address_pool_name   = each.value.request_routing_rule.backend_address_pool_name
+    backend_http_settings_name  = each.value.request_routing_rule.backend_http_settings_name
   }
 
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
+  tags = merge(
+    var.tags,
+    lookup(each.value, "tags", {})
+  )
 }

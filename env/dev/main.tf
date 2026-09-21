@@ -104,18 +104,18 @@ module "vm" {
 
   linux_virtual_machines = {
     for key, vm in var.linux_virtual_machines : key => {
-      name                = vm.name
-      resource_group_name = vm.resource_group_name
-      location            = vm.location
-      size                = vm.size
-      admin_username      = vm.admin_username
-      admin_password      = vm.admin_password
-      admin_ssh_key       = vm.admin_ssh_key
-      network_interface_id = module.nic.network_interfaces[vm.nic_key].id
-      custom_data         = vm.custom_data
-      os_disk = vm.os_disk
+      name                   = vm.name
+      resource_group_name    = vm.resource_group_name
+      location               = vm.location
+      size                   = vm.size
+      admin_username         = vm.admin_username
+      admin_password         = vm.admin_password
+      admin_ssh_key          = vm.admin_ssh_key
+      network_interface_id   = module.nic.network_interfaces[vm.nic_key].id
+      custom_data            = vm.custom_data
+      os_disk                = vm.os_disk
       source_image_reference = vm.source_image_reference
-      tags = vm.tags
+      tags                   = vm.tags
     }
   }
   tags = var.tags
@@ -126,15 +126,15 @@ module "subnet_nsg_association" {
 
   subnet_nsg_associations = {
     frontend = {
-      subnet_name               = "spoke-frontend"
+      subnet_name                 = "spoke-frontend"
       network_security_group_name = "frontend"
     }
     backend = {
-      subnet_name               = "spoke-backend"
+      subnet_name                 = "spoke-backend"
       network_security_group_name = "backend"
     }
     private_endpoint = {
-      subnet_name               = "spoke-private_endpoint"
+      subnet_name                 = "spoke-private_endpoint"
       network_security_group_name = "private_endpoint"
     }
   }
@@ -177,35 +177,52 @@ module "gateway" {
       name                = gateway.name
       resource_group_name = gateway.resource_group_name
       location            = gateway.location
+
       sku = gateway.sku
+
       gateway_ip_configuration = {
-        name      = gateway.gateway_ip_configuration.name
-        subnet_id = module.network.subnets["${gateway.vnet_key}-${gateway.subnet_key}"].id
+        name = gateway.gateway_ip_configuration.name
+        subnet_id = module.network.subnets[
+          "${gateway.vnet_key}-${gateway.subnet_key}"
+        ].id
       }
+
       frontend_ip_configuration = {
-        name                 = gateway.frontend_ip_configuration.name
-        public_ip_address_id = module.public_ip.public_ips[gateway.public_ip_key].id
+        name = gateway.frontend_ip_configuration.name
+        public_ip_address_id = module.public_ip.public_ips[
+          gateway.public_ip_key
+        ].id
       }
+
       frontend_port = gateway.frontend_port
+
       http_listener = gateway.http_listener
+
       request_routing_rule = gateway.request_routing_rule
+
       backend_address_pool = {
-        name        = gateway.backend_address_pool.name
+        name         = gateway.backend_address_pool.name
         ip_addresses = local.frontend_vm_private_ips
       }
-      health_probe = merge(try(gateway.health_probe, {}), {
-        name     = try(gateway.health_probe.name, "agw-health-probe")
-        protocol = try(gateway.health_probe.protocol, "Http")
-        port     = try(gateway.health_probe.port, 80)
-        path     = try(gateway.health_probe.path, "/health")
-      })
+
+      health_probe = {
+        name                = gateway.health_probe.name
+        protocol            = gateway.health_probe.protocol
+        port                = gateway.health_probe.port
+        path                = gateway.health_probe.path
+        interval            = gateway.health_probe.interval
+        timeout             = gateway.health_probe.timeout
+        unhealthy_threshold = gateway.health_probe.unhealthy_threshold
+      }
+
       backend_http_settings = gateway.backend_http_settings
+
       tags = gateway.tags
     }
   }
+
   tags = var.tags
 }
-
 module "private_access" {
   source = "../../modules/private-access"
 
@@ -220,13 +237,13 @@ module "private_access" {
 
   private_endpoints = {
     for key, endpoint in var.private_endpoints : key => {
-      name                = endpoint.name
-      location            = endpoint.location
-      resource_group_name = endpoint.resource_group_name
-      subnet_id           = module.network.subnets["${endpoint.vnet_key}-${endpoint.subnet_key}"].id
+      name                       = endpoint.name
+      location                   = endpoint.location
+      resource_group_name        = endpoint.resource_group_name
+      subnet_id                  = module.network.subnets["${endpoint.vnet_key}-${endpoint.subnet_key}"].id
       private_service_connection = endpoint.private_service_connection
       private_dns_zone_group     = endpoint.private_dns_zone_group
-      tags                      = endpoint.tags
+      tags                       = endpoint.tags
     }
   }
   tags = var.tags
@@ -237,12 +254,12 @@ module "bastion" {
 
   bastions = {
     for key, bastion in var.bastions : key => {
-      name                = bastion.name
-      resource_group_name = bastion.resource_group_name
-      location            = bastion.location
-      subnet_id           = module.network.subnets["${bastion.vnet_key}-${bastion.subnet_key}"].id
+      name                 = bastion.name
+      resource_group_name  = bastion.resource_group_name
+      location             = bastion.location
+      subnet_id            = module.network.subnets["${bastion.vnet_key}-${bastion.subnet_key}"].id
       public_ip_address_id = module.public_ip.public_ips[bastion.public_ip_key].id
-      tags                = bastion.tags
+      tags                 = bastion.tags
     }
   }
   tags = var.tags

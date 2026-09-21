@@ -1,4 +1,4 @@
-﻿variable "location" {
+variable "location" {
   description = "Azure region for all resources in the dev environment. Must match the target region, compliance requirements, and service availability."
   type        = string
 
@@ -31,6 +31,7 @@ variable "tags" {
   }
 }
 
+# RESOURCE GROUPS
 variable "resource_groups" {
   description = "Map of resource groups to create for the dev environment. Names should be lowercase, globally unique within the subscription, and consistent with the naming convention."
   type = map(object({
@@ -46,6 +47,7 @@ variable "resource_groups" {
   }
 }
 
+# STORAGE ACCOUNTS
 variable "storage_accounts" {
   description = "Map of storage accounts to create for the dev environment. Values should follow Azure naming rules and enterprise storage standards."
   type = map(object({
@@ -71,8 +73,8 @@ variable "vnets" {
     resource_group_name = string
     address_space       = list(string)
     subnets = map(object({
-      name             = string
-      address_prefixes = list(string)
+      name              = string
+      address_prefixes  = list(string)
       service_endpoints = optional(list(string), [])
     }))
     tags = optional(map(string), {})
@@ -132,9 +134,13 @@ variable "load_balancers" {
       name = string
     })
     health_probe = object({
-      name     = string
-      protocol = optional(string, "Tcp")
-      port     = number
+      name                = string
+      protocol            = optional(string, "Http")
+      port                = number
+      path                = optional(string, "/")
+      interval            = optional(number, 30)
+      timeout             = optional(number, 30)
+      unhealthy_threshold = optional(number, 3)
     })
     lb_rule = object({
       name                           = string
@@ -152,16 +158,16 @@ variable "load_balancers" {
 variable "key_vaults" {
   description = "Key Vault for app secrets"
   type = map(object({
-    name                            = string
-    resource_group_name             = string
-    location                        = string
-    tenant_id                       = string
-    sku_name                        = optional(string, "standard")
-    purge_protection_enabled        = optional(bool, true)
-    soft_delete_retention_days      = optional(number, 90)
-    enable_rbac_authorization       = optional(bool, true)
-    public_network_access_enabled   = optional(bool, true)
-    tags                            = optional(map(string), {})
+    name                          = string
+    resource_group_name           = string
+    location                      = string
+    tenant_id                     = string
+    sku_name                      = optional(string, "standard")
+    purge_protection_enabled      = optional(bool, true)
+    soft_delete_retention_days    = optional(number, 90)
+    enable_rbac_authorization     = optional(bool, true)
+    public_network_access_enabled = optional(bool, true)
+    tags                          = optional(map(string), {})
   }))
 }
 
@@ -233,47 +239,70 @@ variable "application_insights" {
   }
 }
 
+# APPLICATION GATEWAYS
 variable "application_gateways" {
+
   description = "Application Gateway for public ingress and TLS termination. VNet and public IP relationships are resolved from module outputs by key."
+
   type = map(object({
+
     name                = string
     resource_group_name = string
     location            = string
-    vnet_key            = string
-    subnet_key          = string
-    public_ip_key       = string
+
+    vnet_key      = string
+    subnet_key    = string
+    public_ip_key = string
+
     sku = object({
       name     = string
       tier     = string
       capacity = number
     })
+
     gateway_ip_configuration = object({
       name = string
     })
+
     frontend_ip_configuration = object({
       name = string
     })
+
     frontend_port = object({
       name = string
       port = number
     })
+
     http_listener = object({
       name                           = string
       frontend_ip_configuration_name = string
       frontend_port_name             = string
       protocol                       = string
     })
+
     request_routing_rule = object({
-      name                       = string
-      rule_type                  = string
-      http_listener_name         = string
-      backend_address_pool_name  = string
-      backend_http_settings_name = string
+      name                        = string
+      rule_type                   = string
+      http_listener_name          = string
+      backend_address_pool_name   = string
+      backend_http_settings_name  = string
     })
+
     backend_address_pool = object({
-      name        = string
+      name         = string
       ip_addresses = optional(list(string), [])
     })
+
+    health_probe = object({
+      name                = string
+      protocol            = optional(string, "Http")
+      port                = number
+      path                = optional(string, "/")
+      interval            = optional(number, 30)
+      timeout             = optional(number, 30)
+      unhealthy_threshold = optional(number, 3)
+    })
+
     backend_http_settings = object({
       name                  = string
       cookie_based_affinity = string
@@ -281,13 +310,22 @@ variable "application_gateways" {
       protocol              = string
       request_timeout       = number
     })
+
     tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, gateway in var.application_gateways : length(trimspace(gateway.name)) > 0 && length(trimspace(gateway.vnet_key)) > 0 && length(trimspace(gateway.subnet_key)) > 0 && length(trimspace(gateway.public_ip_key)) > 0 && gateway.sku.capacity >= 1 && gateway.frontend_port.port >= 1 && gateway.frontend_port.port <= 65535
+      for key, gateway in var.application_gateways :
+      length(trimspace(gateway.name)) > 0 &&
+      length(trimspace(gateway.vnet_key)) > 0 &&
+      length(trimspace(gateway.subnet_key)) > 0 &&
+      length(trimspace(gateway.public_ip_key)) > 0 &&
+      gateway.sku.capacity >= 1 &&
+      gateway.frontend_port.port >= 1 &&
+      gateway.frontend_port.port <= 65535
     ])
+
     error_message = "Application Gateway names must be non-empty, VNet/subnet/public IP keys must be defined, capacity must be at least 1, and frontend ports must be valid TCP/UDP ports."
   }
 }
@@ -352,7 +390,7 @@ variable "linux_virtual_machines" {
 variable "subnet_nsg_associations" {
   description = "Map of subnet names to NSG names. The child association module resolves the Azure IDs from upstream module outputs."
   type = map(object({
-    subnet_name                = string
+    subnet_name                 = string
     network_security_group_name = string
   }))
 
@@ -397,7 +435,7 @@ variable "private_endpoints" {
       request_message                = optional(string, null)
     })
     private_dns_zone_group = optional(object({
-      name                = string
+      name                 = string
       private_dns_zone_ids = list(string)
     }), null)
     tags = optional(map(string), {})
