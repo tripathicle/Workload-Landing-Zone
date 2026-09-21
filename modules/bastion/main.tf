@@ -6,6 +6,7 @@
 # - resource_group_name: (Required) Resource group name.
 # - ip_configuration: (Required) Bastion IP configuration block.
 # - tags: (Optional) Resource tags.
+
 resource "azurerm_bastion_host" "this" {
   for_each = var.bastions
 
@@ -14,10 +15,13 @@ resource "azurerm_bastion_host" "this" {
   resource_group_name = each.value.resource_group_name
 
   ip_configuration {
-    name                 = "bastion-ip-config"
-    subnet_id            = each.value.subnet_id
-    public_ip_address_id = each.value.public_ip_address_id
+    name                 = each.value.ip_configuration.name
+    subnet_id            = each.value.ip_configuration.subnet_id
+    public_ip_address_id = each.value.ip_configuration.public_ip_address_id
   }
 
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }

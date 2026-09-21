@@ -778,8 +778,10 @@ variable "private_endpoints" {
   }
 }
 
+
 variable "bastions" {
   description = "Azure Bastion hosts for secure administrative access. VNet/subnet and public IP relationships are resolved from outputs by key."
+
   type = map(object({
     name                = string
     resource_group_name = string
@@ -792,8 +794,15 @@ variable "bastions" {
 
   validation {
     condition = alltrue([
-      for key, bastion in var.bastions : length(trimspace(bastion.name)) > 0 && length(trimspace(bastion.vnet_key)) > 0 && length(trimspace(bastion.subnet_key)) > 0 && length(trimspace(bastion.public_ip_key)) > 0
+      for key, bastion in var.bastions :
+      length(trimspace(bastion.name)) > 0 &&
+      length(trimspace(bastion.resource_group_name)) > 0 &&
+      length(trimspace(bastion.location)) > 0 &&
+      length(trimspace(bastion.vnet_key)) > 0 &&
+      length(trimspace(bastion.subnet_key)) > 0 &&
+      length(trimspace(bastion.public_ip_key)) > 0
     ])
-    error_message = "Bastion names, VNet/subnet keys, and public IP keys must be defined for secure access."
+
+    error_message = "Bastion name, resource group, location, VNet/subnet keys, and public IP key must be defined."
   }
 }
