@@ -6,16 +6,39 @@
 # - resource_group_name: (Required) Target resource group.
 # - security_rule: (Required) Inbound or outbound network rules.
 # - tags: (Optional) Resource tags.
+# ============================================================
+# Network Security Groups
+# ============================================================
+# CHANGE:
+# - Kept NSG creation generic and reusable.
+# - NSG rules are supplied by the caller through variables.
+# - No environment-specific subnet, VNet, IP, or port values
+#   are hardcoded in this child module.
+# - Common tags and NSG-specific tags are merged.
+# - Dynamic security_rule supports any number of rules per NSG.
+# ============================================================
+
 resource "azurerm_network_security_group" "this" {
   for_each = var.network_security_groups
 
   name                = each.value.name
   location            = each.value.location
   resource_group_name = each.value.resource_group_name
-  tags                = merge(var.tags, lookup(each.value, "tags", {}))
 
+  # CHANGE:
+  # Resource-specific tags override common tags when the same
+  # key exists.
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
+
+  # CHANGE:
+  # Security rules remain data-driven instead of creating
+  # separate hardcoded azurerm_network_security_rule resources.
   dynamic "security_rule" {
     for_each = each.value.security_rules
+
     content {
       name                       = security_rule.value.name
       priority                   = security_rule.value.priority

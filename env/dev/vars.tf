@@ -281,11 +281,11 @@ variable "application_gateways" {
     })
 
     request_routing_rule = object({
-      name                        = string
-      rule_type                   = string
-      http_listener_name          = string
-      backend_address_pool_name   = string
-      backend_http_settings_name  = string
+      name                       = string
+      rule_type                  = string
+      http_listener_name         = string
+      backend_address_pool_name  = string
+      backend_http_settings_name = string
     })
 
     backend_address_pool = object({
@@ -355,35 +355,53 @@ variable "network_interfaces" {
 }
 
 variable "linux_virtual_machines" {
-  description = "Linux VM definitions for the workload tier. The NIC relationship is resolved from the module output by key to keep the deployment reusable."
+  description = "Linux VM definitions for the workload tier. NIC relationships are resolved from the network interface module by key."
+
   type = map(object({
     name                = string
     resource_group_name = string
     location            = string
     size                = string
-    admin_username      = string
-    admin_password      = optional(string, null)
-    admin_ssh_key       = optional(string, null)
-    nic_key             = string
-    custom_data         = optional(string, null)
+
+    admin_username = string
+    admin_password = optional(string, null)
+    admin_ssh_key  = optional(string, null)
+
+    nic_key = string
+
+    custom_data = optional(string, null)
+
     os_disk = object({
       caching              = string
       storage_account_type = string
     })
+
     source_image_reference = object({
       publisher = string
       offer     = string
       sku       = string
       version   = string
     })
+
     tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, vm in var.linux_virtual_machines : length(trimspace(vm.name)) > 0 && length(trimspace(vm.admin_username)) > 0 && length(trimspace(vm.nic_key)) > 0 && (length(trimspace(coalesce(vm.admin_password, ""))) >= 12 || vm.admin_ssh_key != null) && length(trimspace(vm.size)) > 0
+      for key, vm in var.linux_virtual_machines :
+      length(trimspace(vm.name)) > 0 &&
+      length(trimspace(vm.resource_group_name)) > 0 &&
+      length(trimspace(vm.location)) > 0 &&
+      length(trimspace(vm.size)) > 0 &&
+      length(trimspace(vm.admin_username)) > 0 &&
+      length(trimspace(vm.nic_key)) > 0 &&
+      (
+        vm.admin_ssh_key != null ||
+        length(trimspace(coalesce(vm.admin_password, ""))) >= 12
+      )
     ])
-    error_message = "VM names and admin usernames must be non-empty; a valid NIC key must be supplied; either a secure password of at least 12 characters or an SSH key must be supplied, and size must be defined."
+
+    error_message = "Each Linux VM must define a name, resource group, location, size, admin username, and NIC key, and must provide either an SSH public key or an admin password of at least 12 characters."
   }
 }
 
