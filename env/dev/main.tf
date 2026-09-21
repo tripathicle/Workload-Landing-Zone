@@ -44,9 +44,8 @@ locals {
 module "resource_groups" {
   source = "../../modules/rg"
 
-  location        = var.location
-  tags            = var.tags
   resource_groups = var.resource_groups
+  tags            = var.tags
 }
 
 

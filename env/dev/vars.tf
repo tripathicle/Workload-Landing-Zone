@@ -1,51 +1,80 @@
 variable "location" {
-  description = "Azure region for all resources in the dev environment. Must match the target region, compliance requirements, and service availability."
-  type        = string
+  description = "Azure region for all resources in the environment."
+
+  type = string
 
   validation {
-    condition     = contains(["japaneast", "eastus", "eastus2", "centralus", "westeurope", "uksouth"], lower(var.location))
-    error_message = "location must be a supported Azure region, for example: japaneast, eastus, eastus2, centralus, westeurope, or uksouth."
+    condition = contains(
+      [
+        "japaneast",
+        "eastus",
+        "eastus2",
+        "centralus",
+        "westeurope",
+        "uksouth"
+      ],
+      lower(var.location)
+    )
+
+    error_message = "location must be a supported Azure region."
   }
 }
 
 variable "environment" {
-  description = "Deployment environment name. Used for naming, tags, and policy enforcement."
-  type        = string
+  description = "Deployment environment name."
+
+  type = string
 
   validation {
-    condition     = contains(["dev", "stage", "prod"], lower(var.environment))
+    condition = contains(
+      ["dev", "stage", "prod"],
+      lower(var.environment)
+    )
+
     error_message = "environment must be one of: dev, stage, or prod."
   }
 }
 
 variable "tags" {
-  description = "Default tags applied to all resources. Keep values consistent across the landing zone to support governance, ownership, and cost tracking."
-  type        = map(string)
-  default     = {}
+  description = "Default tags applied to all resources."
+
+  type    = map(string)
+  default = {}
 
   validation {
-    condition = length(var.tags) == 0 || alltrue([
-      for key, value in var.tags : length(trimspace(key)) > 0 && length(trimspace(value)) > 0
+    condition = alltrue([
+      for key, value in var.tags :
+      length(trimspace(key)) > 0 &&
+      length(trimspace(value)) > 0
     ])
-    error_message = "Each tag key and value must be non-empty strings to preserve consistent governance and billing metadata."
+
+    error_message = "Each tag key and value must be non-empty."
   }
 }
 
+
+
 # RESOURCE GROUPS
 variable "resource_groups" {
-  description = "Map of resource groups to create for the dev environment. Names should be lowercase, globally unique within the subscription, and consistent with the naming convention."
+  description = "Resource groups for the workload environment."
+
   type = map(object({
-    name = string
-    tags = optional(map(string), {})
+    name     = string
+    location = string
+    tags     = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for name, rg in var.resource_groups : length(trimspace(rg.name)) > 0 && can(regex("^[A-Za-z0-9-_.]+$", rg.name))
+      for key, rg in var.resource_groups :
+      length(trimspace(rg.name)) > 0 &&
+      length(trimspace(rg.location)) > 0
     ])
-    error_message = "Each resource group name must be non-empty and contain only letters, numbers, hyphens, underscores, or periods."
+
+    error_message = "Each resource group must define a non-empty name and location."
   }
 }
+
 
 # STORAGE ACCOUNTS
 variable "storage_accounts" {
