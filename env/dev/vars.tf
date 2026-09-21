@@ -196,19 +196,60 @@ variable "load_balancers" {
 }
 
 variable "key_vaults" {
-  description = "Key Vault for app secrets"
+  description = "Key Vault definitions for the workload environment."
+
   type = map(object({
-    name                          = string
-    resource_group_name           = string
-    location                      = string
-    tenant_id                     = string
-    sku_name                      = optional(string, "standard")
-    purge_protection_enabled      = optional(bool, true)
-    soft_delete_retention_days    = optional(number, 90)
-    enable_rbac_authorization     = optional(bool, true)
-    public_network_access_enabled = optional(bool, true)
-    tags                          = optional(map(string), {})
+    name                = string
+    resource_group_name = string
+    location            = string
+    tenant_id           = string
+
+    sku_name = optional(string, "standard")
+
+    purge_protection_enabled = optional(bool, true)
+
+    soft_delete_retention_days = optional(number, 90)
+
+    enable_rbac_authorization = optional(bool, true)
+
+    public_network_access_enabled = optional(bool, false)
+
+    tags = optional(map(string), {})
   }))
+
+  validation {
+    condition = alltrue([
+      for key, kv in var.key_vaults :
+      length(trimspace(kv.name)) > 0 &&
+      length(trimspace(kv.resource_group_name)) > 0 &&
+      length(trimspace(kv.location)) > 0 &&
+      length(trimspace(kv.tenant_id)) > 0
+    ])
+
+    error_message = "Each Key Vault must define a non-empty name, resource group name, location, and tenant ID."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, kv in var.key_vaults :
+      contains(
+        ["standard", "premium"],
+        lower(kv.sku_name)
+      )
+    ])
+
+    error_message = "Key Vault sku_name must be either standard or premium."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, kv in var.key_vaults :
+      kv.soft_delete_retention_days >= 7 &&
+      kv.soft_delete_retention_days <= 90
+    ])
+
+    error_message = "Key Vault soft delete retention must be between 7 and 90 days."
+  }
 }
 
 variable "network_security_groups" {

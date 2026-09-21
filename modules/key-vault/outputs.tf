@@ -1,5 +1,6 @@
 output "key_vaults" {
-  description = "Map of created Key Vault metadata"
+  description = "Map of provisioned Key Vault metadata."
+
   value = {
     for key, kv in azurerm_key_vault.this : key => {
       id        = kv.id
