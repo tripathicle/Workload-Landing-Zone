@@ -37,11 +37,11 @@ variable "application_gateways" {
     })
 
     request_routing_rule = object({
-      name                        = string
-      rule_type                   = string
-      http_listener_name          = string
-      backend_address_pool_name   = string
-      backend_http_settings_name  = string
+      name                       = string
+      rule_type                  = string
+      http_listener_name         = string
+      backend_address_pool_name  = string
+      backend_http_settings_name = string
     })
 
     backend_address_pool = object({

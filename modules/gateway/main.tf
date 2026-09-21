@@ -59,11 +59,11 @@ resource "azurerm_application_gateway" "this" {
   }
 
   request_routing_rule {
-    name                        = each.value.request_routing_rule.name
-    rule_type                   = each.value.request_routing_rule.rule_type
-    http_listener_name          = each.value.request_routing_rule.http_listener_name
-    backend_address_pool_name   = each.value.request_routing_rule.backend_address_pool_name
-    backend_http_settings_name  = each.value.request_routing_rule.backend_http_settings_name
+    name                       = each.value.request_routing_rule.name
+    rule_type                  = each.value.request_routing_rule.rule_type
+    http_listener_name         = each.value.request_routing_rule.http_listener_name
+    backend_address_pool_name  = each.value.request_routing_rule.backend_address_pool_name
+    backend_http_settings_name = each.value.request_routing_rule.backend_http_settings_name
   }
 
   tags = merge(

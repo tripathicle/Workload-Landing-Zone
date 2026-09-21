@@ -16,9 +16,9 @@ resource "azurerm_lb" "this" {
   sku                 = each.value.sku
 
   frontend_ip_configuration {
-    name                 = each.value.frontend_ip_configuration.name
-    subnet_id            = each.value.frontend_ip_configuration.subnet_id
-    private_ip_address   = each.value.frontend_ip_configuration.private_ip_address
+    name                          = each.value.frontend_ip_configuration.name
+    subnet_id                     = each.value.frontend_ip_configuration.subnet_id
+    private_ip_address            = each.value.frontend_ip_configuration.private_ip_address
     private_ip_address_allocation = "Static"
   }
 

@@ -44,8 +44,8 @@ resource "azurerm_linux_web_app" "this" {
   dynamic "site_config" {
     for_each = each.value.site_config != null ? [each.value.site_config] : []
     content {
-      always_on = lookup(site_config.value, "always_on", true)
-      ftps_state = lookup(site_config.value, "ftps_state", "FtpsOnly")
+      always_on     = lookup(site_config.value, "always_on", true)
+      ftps_state    = lookup(site_config.value, "ftps_state", "FtpsOnly")
       http2_enabled = lookup(site_config.value, "http2_enabled", true)
     }
   }
