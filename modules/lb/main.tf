@@ -7,6 +7,13 @@
 # - sku: (Optional) Load balancer SKU, typically Standard.
 # - frontend_ip_configuration: (Required) Frontend IP configuration for the LB.
 # - tags: (Optional) Resource tags.
+
+
+
+# ============================================================
+# INTERNAL AZURE LOAD BALANCER
+# ============================================================
+
 resource "azurerm_lb" "this" {
   for_each = var.load_balancers
 
@@ -22,8 +29,16 @@ resource "azurerm_lb" "this" {
     private_ip_address_allocation = "Static"
   }
 
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }
+
+
+# ============================================================
+# BACKEND ADDRESS POOL
+# ============================================================
 
 resource "azurerm_lb_backend_address_pool" "this" {
   for_each = var.load_balancers
@@ -32,42 +47,71 @@ resource "azurerm_lb_backend_address_pool" "this" {
   name            = each.value.backend_address_pool.name
 }
 
+
+# ============================================================
+# BACKEND POOL ADDRESSES
+# ============================================================
+
 resource "azurerm_lb_backend_address_pool_address" "this" {
   for_each = merge([
     for lb_key, lb in var.load_balancers : {
-      for ip_index, ip in lookup(lb.backend_address_pool, "ip_addresses", []) :
+      for ip_index, ip_address in lb.backend_address_pool.ip_addresses :
       "${lb_key}-${ip_index}" => {
         lb_key     = lb_key
-        ip_address = ip
+        ip_address = ip_address
       }
     }
   ]...)
 
-  name                    = "${each.value.lb_key}-backend-${each.key}"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.this[each.value.lb_key].id
-  ip_address              = each.value.ip_address
+  name = "${each.value.lb_key}-backend-${each.key}"
+
+  backend_address_pool_id = azurerm_lb_backend_address_pool.this[
+    each.value.lb_key
+  ].id
+
+  ip_address = each.value.ip_address
 }
+
+
+# ============================================================
+# HEALTH PROBE
+# ============================================================
 
 resource "azurerm_lb_probe" "this" {
   for_each = var.load_balancers
 
   loadbalancer_id = azurerm_lb.this[each.key].id
-  name            = each.value.health_probe.name
-  protocol        = each.value.health_probe.protocol
-  port            = each.value.health_probe.port
+
+  name                = each.value.health_probe.name
+  protocol            = each.value.health_probe.protocol
+  port                = each.value.health_probe.port
+  request_path        = each.value.health_probe.request_path
+  interval_in_seconds = each.value.health_probe.interval_in_seconds
+  number_of_probes    = each.value.health_probe.number_of_probes
 }
+
+
+# ============================================================
+# LOAD BALANCER RULE
+# ============================================================
 
 resource "azurerm_lb_rule" "this" {
   for_each = var.load_balancers
 
-  loadbalancer_id                = azurerm_lb.this[each.key].id
+  loadbalancer_id = azurerm_lb.this[each.key].id
+
   name                           = each.value.lb_rule.name
   protocol                       = each.value.lb_rule.protocol
   frontend_port                  = each.value.lb_rule.frontend_port
   backend_port                   = each.value.lb_rule.backend_port
   frontend_ip_configuration_name = each.value.lb_rule.frontend_ip_configuration_name
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.this[each.key].id]
-  probe_id                       = azurerm_lb_probe.this[each.key].id
-  load_distribution              = each.value.lb_rule.load_distribution
-  disable_outbound_snat          = false
+
+  backend_address_pool_ids = [
+    azurerm_lb_backend_address_pool.this[each.key].id
+  ]
+
+  probe_id = azurerm_lb_probe.this[each.key].id
+
+  load_distribution     = each.value.lb_rule.load_distribution
+  disable_outbound_snat = true
 }
