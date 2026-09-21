@@ -1,5 +1,7 @@
+
 output "storage_accounts" {
-  description = "Map of created storage accounts"
+  description = "Map of provisioned Azure Storage Accounts."
+
   value = {
     for key, storage_account in azurerm_storage_account.this : key => {
       id                    = storage_account.id
