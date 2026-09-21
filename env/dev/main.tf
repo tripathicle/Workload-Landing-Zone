@@ -193,15 +193,11 @@ module "vm" {
       admin_password = vm.admin_password
       admin_ssh_key  = vm.admin_ssh_key
 
-      # CHANGE / IMPORTANT:
-      # Resolve the logical nic_key from tfvars to the actual
-      # Azure NIC resource ID created by module.nic.
       network_interface_id = module.nic.network_interfaces[vm.nic_key].id
 
-      # CHANGE:
-      # Pass VM bootstrap script from environment configuration
-      # into the reusable VM module.
       custom_data = vm.custom_data
+
+      identity_type = vm.identity_type
 
       os_disk = vm.os_disk
 
@@ -213,7 +209,6 @@ module "vm" {
 
   tags = var.tags
 }
-
 
 # ============================================================
 # SUBNET -> NSG ASSOCIATIONS

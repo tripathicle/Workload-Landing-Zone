@@ -433,6 +433,8 @@ variable "linux_virtual_machines" {
 
     custom_data = optional(string, null)
 
+    identity_type = optional(string, "SystemAssigned")
+
     os_disk = object({
       caching              = string
       storage_account_type = string
@@ -456,14 +458,62 @@ variable "linux_virtual_machines" {
       length(trimspace(vm.location)) > 0 &&
       length(trimspace(vm.size)) > 0 &&
       length(trimspace(vm.admin_username)) > 0 &&
-      length(trimspace(vm.nic_key)) > 0 &&
+      length(trimspace(vm.nic_key)) > 0
+    ])
+
+    error_message = "Each Linux VM must define a non-empty name, resource group, location, size, admin username, and NIC key."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vm in var.linux_virtual_machines :
+      vm.admin_ssh_key != null ||
       (
-        vm.admin_ssh_key != null ||
-        length(trimspace(coalesce(vm.admin_password, ""))) >= 12
+        vm.admin_password != null &&
+        length(trimspace(vm.admin_password)) >= 12
       )
     ])
 
-    error_message = "Each Linux VM must define a name, resource group, location, size, admin username, and NIC key, and must provide either an SSH public key or an admin password of at least 12 characters."
+    error_message = "Each Linux VM must provide either an SSH public key or an admin password of at least 12 characters."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vm in var.linux_virtual_machines :
+      vm.identity_type == null ||
+      contains(
+        [
+          "SystemAssigned",
+          "UserAssigned",
+          "SystemAssigned, UserAssigned"
+        ],
+        vm.identity_type
+      )
+    ])
+
+    error_message = "identity_type must be SystemAssigned, UserAssigned, SystemAssigned, UserAssigned, or null."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vm in var.linux_virtual_machines :
+      length(trimspace(vm.os_disk.caching)) > 0 &&
+      length(trimspace(vm.os_disk.storage_account_type)) > 0
+    ])
+
+    error_message = "Each Linux VM must define valid OS disk caching and storage account type values."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vm in var.linux_virtual_machines :
+      length(trimspace(vm.source_image_reference.publisher)) > 0 &&
+      length(trimspace(vm.source_image_reference.offer)) > 0 &&
+      length(trimspace(vm.source_image_reference.sku)) > 0 &&
+      length(trimspace(vm.source_image_reference.version)) > 0
+    ])
+
+    error_message = "Each Linux VM must define publisher, offer, SKU, and version for the source image."
   }
 }
 

@@ -17,12 +17,15 @@
 resource "azurerm_linux_virtual_machine" "this" {
   for_each = var.linux_virtual_machines
 
-  name                            = each.value.name
-  resource_group_name             = each.value.resource_group_name
-  location                        = each.value.location
-  size                            = each.value.size
-  admin_username                  = each.value.admin_username
-  admin_password                  = each.value.admin_ssh_key != null ? null : each.value.admin_password
+  name                = each.value.name
+  resource_group_name = each.value.resource_group_name
+  location            = each.value.location
+  size                = each.value.size
+
+  admin_username = each.value.admin_username
+
+  admin_password = each.value.admin_ssh_key != null ? null : each.value.admin_password
+
   disable_password_authentication = each.value.admin_ssh_key != null
 
   network_interface_ids = [
@@ -37,6 +40,14 @@ resource "azurerm_linux_virtual_machine" "this" {
     content {
       username   = each.value.admin_username
       public_key = admin_ssh_key.value
+    }
+  }
+
+  dynamic "identity" {
+    for_each = each.value.identity_type != null ? [each.value.identity_type] : []
+
+    content {
+      type = identity.value
     }
   }
 
