@@ -126,8 +126,8 @@ variable "load_balancers" {
 
     sku = optional(string, "Standard")
 
-    vnet_key    = string
-    subnet_key  = string
+    vnet_key   = string
+    subnet_key = string
 
     frontend_ip_configuration = object({
       name                 = string
@@ -283,42 +283,81 @@ variable "network_security_groups" {
 }
 
 variable "log_analytics_workspaces" {
-  description = "Log Analytics workspace for centralized diagnostics and monitoring."
+  description = "Log Analytics workspace definitions for the workload environment."
+
   type = map(object({
     name                = string
     resource_group_name = string
     location            = string
-    sku                 = optional(string, "PerGB2018")
-    retention_in_days   = optional(number, 30)
-    tags                = optional(map(string), {})
+
+    sku               = optional(string, "PerGB2018")
+    retention_in_days = optional(number, 30)
+
+    tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, workspace in var.log_analytics_workspaces : length(trimspace(workspace.name)) > 0 && workspace.retention_in_days >= 30 && workspace.retention_in_days <= 730
+      for key, workspace in var.log_analytics_workspaces :
+      length(trimspace(workspace.name)) > 0 &&
+      length(trimspace(workspace.resource_group_name)) > 0 &&
+      length(trimspace(workspace.location)) > 0
     ])
-    error_message = "Log Analytics names must be non-empty and retention_in_days should be between 30 and 730 days."
+
+    error_message = "Each Log Analytics workspace must define a non-empty name, resource group name, and location."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, workspace in var.log_analytics_workspaces :
+      workspace.retention_in_days >= 30 &&
+      workspace.retention_in_days <= 730
+    ])
+
+    error_message = "Log Analytics retention must be between 30 and 730 days."
   }
 }
 
 variable "application_insights" {
-  description = "Application Insights resource for application telemetry and observability."
+  description = "Application Insights definitions for the workload environment."
+
   type = map(object({
     name                = string
     resource_group_name = string
     location            = string
-    workspace_id        = string
-    application_type    = optional(string, "web")
-    tags                = optional(map(string), {})
+
+    workspace_key = string
+
+    application_type = optional(string, "web")
+
+    tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, appi in var.application_insights : length(trimspace(appi.name)) > 0 && contains(["web", "other"], lower(appi.application_type))
+      for key, appi in var.application_insights :
+      length(trimspace(appi.name)) > 0 &&
+      length(trimspace(appi.resource_group_name)) > 0 &&
+      length(trimspace(appi.location)) > 0 &&
+      length(trimspace(appi.workspace_key)) > 0
     ])
-    error_message = "Application Insights names must be non-empty and application_type must be web or other."
+
+    error_message = "Each Application Insights resource must define a non-empty name, resource group name, location, and Log Analytics workspace key."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, appi in var.application_insights :
+      contains(
+        ["web", "other"],
+        lower(appi.application_type)
+      )
+    ])
+
+    error_message = "Application Insights application_type must be either web or other."
   }
 }
+
 
 # APPLICATION GATEWAYS
 variable "application_gateways" {
