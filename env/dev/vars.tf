@@ -334,15 +334,15 @@ variable "network_security_groups" {
     location            = string
 
     security_rules = map(object({
-      name                        = string
-      priority                    = number
-      direction                   = string
-      access                      = string
-      protocol                    = string
-      source_port_range           = optional(string, "*")
-      destination_port_range      = optional(string, "*")
-      source_address_prefix       = optional(string, "*")
-      destination_address_prefix  = optional(string, "*")
+      name                       = string
+      priority                   = number
+      direction                  = string
+      access                     = string
+      protocol                   = string
+      source_port_range          = optional(string, "*")
+      destination_port_range     = optional(string, "*")
+      source_address_prefix      = optional(string, "*")
+      destination_address_prefix = optional(string, "*")
     }))
 
     tags = optional(map(string), {})
@@ -384,9 +384,9 @@ variable "network_security_groups" {
       length([
         for rule_key, rule in nsg.security_rules :
         rule.priority
-      ]) == length(distinct([
-        for rule_key, rule in nsg.security_rules :
-        rule.priority
+        ]) == length(distinct([
+          for rule_key, rule in nsg.security_rules :
+          rule.priority
       ]))
     ])
 

@@ -426,7 +426,7 @@ module "private_access" {
       ].id
 
       private_service_connection = {
-        name                           = endpoint.private_service_connection.name
+        name = endpoint.private_service_connection.name
         private_connection_resource_id = module.sql.sql_servers[
           endpoint.sql_server_key
         ].id

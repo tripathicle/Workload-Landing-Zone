@@ -71,9 +71,9 @@ variable "network_security_groups" {
       length([
         for rule_key, rule in nsg.security_rules :
         rule.priority
-      ]) == length(distinct([
-        for rule_key, rule in nsg.security_rules :
-        rule.priority
+        ]) == length(distinct([
+          for rule_key, rule in nsg.security_rules :
+          rule.priority
       ]))
     ])
 

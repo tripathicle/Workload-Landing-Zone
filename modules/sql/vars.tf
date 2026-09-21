@@ -9,7 +9,7 @@ variable "sql_servers" {
     location            = string
 
     version                      = optional(string, "12.0")
-    administrator_login         = string
+    administrator_login          = string
     administrator_login_password = string
 
     minimum_tls_version           = optional(string, "1.2")
@@ -48,15 +48,15 @@ variable "sql_databases" {
   description = "Map of Azure SQL databases to provision."
 
   type = map(object({
-    name              = string
-    sql_server_key    = string
-    sku_name          = string
-    max_size_gb       = optional(number, 32)
-    zone_redundant    = optional(bool, false)
+    name                 = string
+    sql_server_key       = string
+    sku_name             = string
+    max_size_gb          = optional(number, 32)
+    zone_redundant       = optional(bool, false)
     storage_account_type = optional(string, "Geo")
-    collation         = optional(string, "SQL_Latin1_General_CP1_CI_AS")
-    read_scale        = optional(bool, false)
-    geo_backup_enabled = optional(bool, true)
+    collation            = optional(string, "SQL_Latin1_General_CP1_CI_AS")
+    read_scale           = optional(bool, false)
+    geo_backup_enabled   = optional(bool, true)
 
     tags = optional(map(string), {})
   }))
