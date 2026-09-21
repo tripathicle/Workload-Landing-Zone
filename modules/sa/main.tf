@@ -10,16 +10,24 @@
 # - allow_nested_items_to_be_public: (Optional) Controls public access to nested items.
 # - public_network_access_enabled: (Optional) Enables or disables public network access.
 # - tags: (Optional) Tag set applied to the storage account.
+
+
 resource "azurerm_storage_account" "this" {
   for_each = var.storage_accounts
 
-  name                            = each.value.name
-  resource_group_name             = each.value.resource_group_name
-  location                        = var.location
-  account_tier                    = each.value.account_tier
-  account_replication_type        = each.value.account_replication_type
-  min_tls_version                 = "TLS1_2"
-  allow_nested_items_to_be_public = false
-  public_network_access_enabled   = true
-  tags                            = merge(var.tags, each.value.tags)
+  name                = each.value.name
+  resource_group_name = each.value.resource_group_name
+  location            = var.location
+
+  account_tier             = each.value.account_tier
+  account_replication_type = each.value.account_replication_type
+
+  min_tls_version                 = each.value.min_tls_version
+  allow_nested_items_to_be_public = each.value.allow_nested_items_to_be_public
+  public_network_access_enabled   = each.value.public_network_access_enabled
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }

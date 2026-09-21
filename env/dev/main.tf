@@ -57,12 +57,12 @@ module "resource_groups" {
 # - Actual resource implementation remains inside child module.
 # ============================================================
 
-module "storage_accounts" {
+module "sa" {
   source = "../../modules/sa"
 
+  storage_accounts = var.storage_accounts
   location         = var.location
   tags             = var.tags
-  storage_accounts = var.storage_accounts
 }
 
 
