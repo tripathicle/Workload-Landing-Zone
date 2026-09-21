@@ -1,3 +1,46 @@
+# ============================================================
+# LOCALS
+# ============================================================
+# CHANGE:
+# - Added/kept derived frontend and backend private IP lists.
+# - These values are calculated once and reused by App Gateway
+#   and Internal Load Balancer.
+# - Keeps complex for-expressions out of module blocks.
+# - Enterprise Terraform pattern: locals are used for derived data.
+# ============================================================
+
+locals {
+  # CHANGE:
+  # Collect only frontend VM private IPs.
+  # App Gateway uses these IPs as its backend pool.
+  frontend_vm_private_ips = [
+    for key, nic in var.network_interfaces :
+    nic.ip_configuration.private_ip_address
+    if startswith(key, "frontend_") &&
+    nic.ip_configuration.private_ip_address != null
+  ]
+
+  # CHANGE:
+  # Collect only backend VM private IPs.
+  # Internal Load Balancer uses these IPs as its backend pool.
+  backend_vm_private_ips = [
+    for key, nic in var.network_interfaces :
+    nic.ip_configuration.private_ip_address
+    if startswith(key, "backend_") &&
+    nic.ip_configuration.private_ip_address != null
+  ]
+}
+
+
+# ============================================================
+# RESOURCE GROUPS
+# ============================================================
+# CHANGE:
+# - Root module only passes environment-specific values.
+# - Resource-group creation remains inside reusable child module.
+# - No resource implementation is placed in env/dev/main.tf.
+# ============================================================
+
 module "resource_groups" {
   source = "../../modules/rg"
 
@@ -5,6 +48,15 @@ module "resource_groups" {
   tags            = var.tags
   resource_groups = var.resource_groups
 }
+
+
+# ============================================================
+# STORAGE ACCOUNTS
+# ============================================================
+# CHANGE:
+# - Storage account module receives common location and tags.
+# - Actual resource implementation remains inside child module.
+# ============================================================
 
 module "storage_accounts" {
   source = "../../modules/sa"
@@ -14,6 +66,16 @@ module "storage_accounts" {
   storage_accounts = var.storage_accounts
 }
 
+
+# ============================================================
+# NETWORK
+# ============================================================
+# CHANGE:
+# - Central network module creates/returns VNets and subnets.
+# - Other modules consume network outputs instead of creating
+#   their own networking resources.
+# ============================================================
+
 module "network" {
   source = "../../modules/network"
 
@@ -22,22 +84,192 @@ module "network" {
   vnets    = var.vnets
 }
 
-# module "app" {
-#   source = "../../modules/app"
-#
-#   app_service_plan = var.app_service_plan
-#   linux_web_apps   = var.linux_web_apps
-#   sql_servers      = var.sql_servers
-#   sql_databases    = var.sql_databases
-#   tags             = var.tags
-# }
 
-module "key_vault" {
-  source = "../../modules/key-vault"
+# ============================================================
+# NETWORK SECURITY GROUPS
+# ============================================================
+# CHANGE:
+# - NSGs are created independently through reusable NSG module.
+# - Subnet association is handled separately below.
+# - This keeps NSG creation and association concerns separated.
+# ============================================================
 
-  key_vaults = var.key_vaults
+module "nsg" {
+  source = "../../modules/nsg"
+
+  network_security_groups = var.network_security_groups
+  tags                    = var.tags
+}
+
+
+# ============================================================
+# PUBLIC IP ADDRESSES
+# ============================================================
+# CHANGE:
+# - Public IPs are centralized through the reusable public-ip module.
+# - App Gateway and Bastion consume these outputs.
+# - No public IP is directly created by those modules.
+# ============================================================
+
+module "public_ip" {
+  source = "../../modules/public-ip"
+
+  public_ips = var.public_ips
   tags       = var.tags
 }
+
+
+# ============================================================
+# NETWORK INTERFACES
+# ============================================================
+# CHANGE:
+# - NIC subnet relationship is resolved from module.network outputs.
+# - Environment config only specifies vnet_key/subnet_key.
+# - Actual Azure subnet ID is obtained dynamically.
+# - NIC module remains reusable and does not know about dev/prod.
+# ============================================================
+
+module "nic" {
+  source = "../../modules/nic"
+
+  network_interfaces = {
+    for key, nic in var.network_interfaces : key => {
+      name                = nic.name
+      resource_group_name = nic.resource_group_name
+      location            = nic.location
+
+      ip_configuration = {
+        name = nic.ip_configuration.name
+
+        # CHANGE:
+        # Resolve the actual Azure subnet ID from the network module
+        # instead of hardcoding subnet resource IDs.
+        subnet_id = module.network.subnets[
+          "${nic.vnet_key}-${nic.subnet_key}"
+        ].id
+
+        private_ip_address_allocation = nic.ip_configuration.private_ip_address_allocation
+        private_ip_address            = try(nic.ip_configuration.private_ip_address, null)
+      }
+
+      tags = nic.tags
+    }
+  }
+
+  tags = var.tags
+}
+
+
+# ============================================================
+# LINUX VIRTUAL MACHINES
+# ============================================================
+# CHANGE:
+# - VM module now receives an actual NIC resource ID.
+# - var.linux_virtual_machines keeps only nic_key.
+# - nic_key is resolved here against module.nic output.
+#
+# IMPORTANT FIX:
+# Old:
+#   module.network_interface.network_interfaces[vm.nic_key].id
+#
+# Correct:
+#   module.nic.network_interfaces[vm.nic_key].id
+#
+# The actual module declared in this root module is:
+#   module "nic"
+# ============================================================
+
+module "vm" {
+  source = "../../modules/vm"
+
+  linux_virtual_machines = {
+    for key, vm in var.linux_virtual_machines : key => {
+      name                = vm.name
+      resource_group_name = vm.resource_group_name
+      location            = vm.location
+      size                = vm.size
+
+      admin_username = vm.admin_username
+      admin_password = vm.admin_password
+      admin_ssh_key  = vm.admin_ssh_key
+
+      # CHANGE / IMPORTANT:
+      # Resolve the logical nic_key from tfvars to the actual
+      # Azure NIC resource ID created by module.nic.
+      network_interface_id = module.nic.network_interfaces[vm.nic_key].id
+
+      # CHANGE:
+      # Pass VM bootstrap script from environment configuration
+      # into the reusable VM module.
+      custom_data = vm.custom_data
+
+      os_disk = vm.os_disk
+
+      source_image_reference = vm.source_image_reference
+
+      tags = vm.tags
+    }
+  }
+
+  tags = var.tags
+}
+
+
+# ============================================================
+# SUBNET -> NSG ASSOCIATIONS
+# ============================================================
+# CHANGE:
+# - NSGs are created by module.nsg.
+# - Subnets are created by module.network.
+# - This module connects the two using their outputs.
+#
+# IMPORTANT:
+# The logical keys here must match the keys expected by the
+# nsg-association child module.
+# ============================================================
+
+module "subnet_nsg_association" {
+  source = "../../modules/nsg-association"
+
+  subnet_nsg_associations = {
+    frontend = {
+      subnet_name                 = "spoke-frontend"
+      network_security_group_name = "frontend"
+    }
+
+    backend = {
+      subnet_name                 = "spoke-backend"
+      network_security_group_name = "backend"
+    }
+
+    private_endpoint = {
+      subnet_name                 = "spoke-private_endpoint"
+      network_security_group_name = "private_endpoint"
+    }
+  }
+
+  # CHANGE:
+  # Consume subnet outputs from network module.
+  subnets = module.network.subnets
+
+  # CHANGE:
+  # Consume NSG outputs from NSG module.
+  nsgs = module.nsg.network_security_groups
+}
+
+
+# ============================================================
+# INTERNAL LOAD BALANCER
+# ============================================================
+# CHANGE:
+# - ILB subnet ID is resolved from module.network.
+# - Backend VM private IPs come from locals.
+# - Health probe defaults to backend port 8080 and /health.
+# - Load-balancing rule defaults to frontend/backend port 8080.
+#
+# Traffic:
+# Frontend VMs -> ILB:8080 -> Backend VMs:8080
+# ============================================================
 
 module "internal_load_balancer" {
   source = "../../modules/lb"
@@ -48,126 +280,111 @@ module "internal_load_balancer" {
       resource_group_name = lb.resource_group_name
       location            = lb.location
       sku                 = lb.sku
+
       frontend_ip_configuration = {
-        name                 = lb.frontend_ip_configuration.name
-        subnet_id            = module.network.subnets["${lb.vnet_key}-${lb.subnet_key}"].id
+        name = lb.frontend_ip_configuration.name
+
+        # CHANGE:
+        # Resolve ILB subnet dynamically from network module.
+        subnet_id = module.network.subnets[
+          "${lb.vnet_key}-${lb.subnet_key}"
+        ].id
+
         private_ip_address   = lb.frontend_ip_configuration.private_ip_address
         private_ip_addresses = lb.frontend_ip_configuration.private_ip_addresses
       }
+
       backend_address_pool = {
-        name         = lb.backend_address_pool.name
+        name = lb.backend_address_pool.name
+
+        # CHANGE:
+        # Use backend VM private IPs calculated in locals.
         ip_addresses = local.backend_vm_private_ips
       }
-      health_probe = merge(lb.health_probe, {
-        port = try(lb.health_probe.port, 8080)
-        path = try(lb.health_probe.path, "/health")
-      })
-      lb_rule = merge(lb.lb_rule, {
-        frontend_port = try(lb.lb_rule.frontend_port, 8080)
-        backend_port  = try(lb.lb_rule.backend_port, 8080)
-      })
+
+      # CHANGE:
+      # Backend service is standardized around port 8080
+      # with /health endpoint.
+      health_probe = merge(
+        lb.health_probe,
+        {
+          port = try(lb.health_probe.port, 8080)
+          path = try(lb.health_probe.path, "/health")
+        }
+      )
+
+      # CHANGE:
+      # Default ILB rule:
+      # frontend 8080 -> backend 8080
+      lb_rule = merge(
+        lb.lb_rule,
+        {
+          frontend_port = try(lb.lb_rule.frontend_port, 8080)
+          backend_port  = try(lb.lb_rule.backend_port, 8080)
+        }
+      )
+
       tags = lb.tags
     }
   }
+
   tags = var.tags
 }
 
-module "nsg" {
-  source = "../../modules/nsg"
 
-  network_security_groups = var.network_security_groups
-  tags                    = var.tags
-}
+# ============================================================
+# KEY VAULT
+# ============================================================
+# CHANGE:
+# - Key Vault remains a reusable child module.
+# - Environment-specific Key Vault configuration stays in tfvars.
+# ============================================================
 
-module "nic" {
-  source = "../../modules/nic"
+module "key_vault" {
+  source = "../../modules/key-vault"
 
-  network_interfaces = {
-    for key, nic in var.network_interfaces : key => {
-      name                = nic.name
-      resource_group_name = nic.resource_group_name
-      location            = nic.location
-      ip_configuration = {
-        name                          = nic.ip_configuration.name
-        subnet_id                     = module.network.subnets["${nic.vnet_key}-${nic.subnet_key}"].id
-        private_ip_address_allocation = nic.ip_configuration.private_ip_address_allocation
-        private_ip_address            = try(nic.ip_configuration.private_ip_address, null)
-      }
-      tags = nic.tags
-    }
-  }
-  tags = var.tags
-}
-
-module "vm" {
-  source = "../../modules/vm"
-
-  linux_virtual_machines = {
-    for key, vm in var.linux_virtual_machines : key => {
-      name                   = vm.name
-      resource_group_name    = vm.resource_group_name
-      location               = vm.location
-      size                   = vm.size
-      admin_username         = vm.admin_username
-      admin_password         = vm.admin_password
-      admin_ssh_key          = vm.admin_ssh_key
-      network_interface_id   = module.nic.network_interfaces[vm.nic_key].id
-      custom_data            = vm.custom_data
-      os_disk                = vm.os_disk
-      source_image_reference = vm.source_image_reference
-      tags                   = vm.tags
-    }
-  }
-  tags = var.tags
-}
-
-module "subnet_nsg_association" {
-  source = "../../modules/nsg-association"
-
-  subnet_nsg_associations = {
-    frontend = {
-      subnet_name                 = "spoke-frontend"
-      network_security_group_name = "frontend"
-    }
-    backend = {
-      subnet_name                 = "spoke-backend"
-      network_security_group_name = "backend"
-    }
-    private_endpoint = {
-      subnet_name                 = "spoke-private_endpoint"
-      network_security_group_name = "private_endpoint"
-    }
-  }
-
-  subnets = module.network.subnets
-  nsgs    = module.nsg.network_security_groups
-}
-
-module "public_ip" {
-  source = "../../modules/public-ip"
-
-  public_ips = var.public_ips
+  key_vaults = var.key_vaults
   tags       = var.tags
 }
+
+
+# ============================================================
+# MONITORING
+# ============================================================
+# CHANGE:
+# - Log Analytics and Application Insights are managed through
+#   one reusable monitoring module.
+# - Common tags are applied from the environment root.
+# ============================================================
 
 module "monitoring" {
   source = "../../modules/monitoring"
 
   log_analytics_workspaces = var.log_analytics_workspaces
   application_insights     = var.application_insights
-  tags                     = var.tags
+
+  tags = var.tags
 }
 
-locals {
-  frontend_vm_private_ips = [
-    for key, nic in var.network_interfaces : nic.ip_configuration.private_ip_address
-    if startswith(key, "frontend_") && nic.ip_configuration.private_ip_address != null
-  ]
-  backend_vm_private_ips = [
-    for key, nic in var.network_interfaces : nic.ip_configuration.private_ip_address
-    if startswith(key, "backend_") && nic.ip_configuration.private_ip_address != null
-  ]
-}
+
+# ============================================================
+# APPLICATION GATEWAY
+# ============================================================
+# CHANGE:
+# - App Gateway subnet ID is resolved from network module.
+# - Public IP ID is resolved from public_ip module.
+# - Frontend VM private IPs come from locals.
+# - Health probe is explicitly passed through.
+#
+# Traffic:
+# Internet
+#    |
+#    v
+# App Gateway :80
+#    |
+#    v
+# Frontend VM :80
+# ============================================================
 
 module "gateway" {
   source = "../../modules/gateway"
@@ -182,6 +399,9 @@ module "gateway" {
 
       gateway_ip_configuration = {
         name = gateway.gateway_ip_configuration.name
+
+        # CHANGE:
+        # Resolve App Gateway subnet dynamically.
         subnet_id = module.network.subnets[
           "${gateway.vnet_key}-${gateway.subnet_key}"
         ].id
@@ -189,6 +409,9 @@ module "gateway" {
 
       frontend_ip_configuration = {
         name = gateway.frontend_ip_configuration.name
+
+        # CHANGE:
+        # Resolve App Gateway public IP from public-ip module.
         public_ip_address_id = module.public_ip.public_ips[
           gateway.public_ip_key
         ].id
@@ -201,10 +424,15 @@ module "gateway" {
       request_routing_rule = gateway.request_routing_rule
 
       backend_address_pool = {
-        name         = gateway.backend_address_pool.name
+        name = gateway.backend_address_pool.name
+
+        # CHANGE:
+        # App Gateway sends traffic directly to frontend VM private IPs.
         ip_addresses = local.frontend_vm_private_ips
       }
 
+      # CHANGE:
+      # Explicitly pass all health probe settings from environment config.
       health_probe = {
         name                = gateway.health_probe.name
         protocol            = gateway.health_probe.protocol
@@ -223,6 +451,17 @@ module "gateway" {
 
   tags = var.tags
 }
+
+
+# ============================================================
+# PRIVATE DNS + PRIVATE ENDPOINT
+# ============================================================
+# CHANGE:
+# - Private DNS zone VNet association uses network module output.
+# - Private endpoint subnet uses network module output.
+# - Environment config only specifies logical vnet/subnet keys.
+# ============================================================
+
 module "private_access" {
   source = "../../modules/private-access"
 
@@ -230,38 +469,81 @@ module "private_access" {
     for key, zone in var.private_dns_zones : key => {
       name                = zone.name
       resource_group_name = zone.resource_group_name
-      virtual_network_id  = module.network.vnets[zone.vnet_key].id
-      tags                = zone.tags
+
+      # CHANGE:
+      # Resolve actual VNet ID from network module.
+      virtual_network_id = module.network.vnets[zone.vnet_key].id
+
+      tags = zone.tags
     }
   }
 
   private_endpoints = {
     for key, endpoint in var.private_endpoints : key => {
-      name                       = endpoint.name
-      location                   = endpoint.location
-      resource_group_name        = endpoint.resource_group_name
-      subnet_id                  = module.network.subnets["${endpoint.vnet_key}-${endpoint.subnet_key}"].id
+      name                = endpoint.name
+      location            = endpoint.location
+      resource_group_name = endpoint.resource_group_name
+
+      # CHANGE:
+      # Resolve private endpoint subnet dynamically.
+      subnet_id = module.network.subnets[
+        "${endpoint.vnet_key}-${endpoint.subnet_key}"
+      ].id
+
       private_service_connection = endpoint.private_service_connection
-      private_dns_zone_group     = endpoint.private_dns_zone_group
-      tags                       = endpoint.tags
+
+      private_dns_zone_group = endpoint.private_dns_zone_group
+
+      tags = endpoint.tags
     }
   }
+
   tags = var.tags
 }
+
+
+# ============================================================
+# AZURE BASTION
+# ============================================================
+# CHANGE:
+# - Bastion subnet ID comes from network module.
+# - Bastion public IP comes from public-ip module.
+# - No public IP is attached directly to workload VMs.
+#
+# Traffic:
+# Administrator
+#     |
+#     v
+# Azure Bastion
+#     |
+#     v
+# VM private IP
+# ============================================================
 
 module "bastion" {
   source = "../../modules/bastion"
 
   bastions = {
     for key, bastion in var.bastions : key => {
-      name                 = bastion.name
-      resource_group_name  = bastion.resource_group_name
-      location             = bastion.location
-      subnet_id            = module.network.subnets["${bastion.vnet_key}-${bastion.subnet_key}"].id
-      public_ip_address_id = module.public_ip.public_ips[bastion.public_ip_key].id
-      tags                 = bastion.tags
+      name                = bastion.name
+      resource_group_name = bastion.resource_group_name
+      location            = bastion.location
+
+      # CHANGE:
+      # Resolve Bastion subnet dynamically.
+      subnet_id = module.network.subnets[
+        "${bastion.vnet_key}-${bastion.subnet_key}"
+      ].id
+
+      # CHANGE:
+      # Resolve Bastion public IP from centralized public-ip module.
+      public_ip_address_id = module.public_ip.public_ips[
+        bastion.public_ip_key
+      ].id
+
+      tags = bastion.tags
     }
   }
+
   tags = var.tags
 }
-

@@ -12,6 +12,8 @@
 # - source_image_reference: (Required) Marketplace image reference.
 # - custom_data: (Optional) Cloud-init or bootstrap script.
 # - tags: (Optional) Resource tags.
+
+
 resource "azurerm_linux_virtual_machine" "this" {
   for_each = var.linux_virtual_machines
 
@@ -22,11 +24,16 @@ resource "azurerm_linux_virtual_machine" "this" {
   admin_username      = each.value.admin_username
   admin_password      = each.value.admin_ssh_key != null ? null : each.value.admin_password
   disable_password_authentication = each.value.admin_ssh_key != null
-  network_interface_ids = [each.value.network_interface_id]
+
+  network_interface_ids = [
+    each.value.network_interface_id
+  ]
+
   custom_data = each.value.custom_data != null ? base64encode(each.value.custom_data) : null
 
   dynamic "admin_ssh_key" {
     for_each = each.value.admin_ssh_key != null ? [each.value.admin_ssh_key] : []
+
     content {
       username   = each.value.admin_username
       public_key = admin_ssh_key.value
@@ -45,5 +52,8 @@ resource "azurerm_linux_virtual_machine" "this" {
     version   = each.value.source_image_reference.version
   }
 
-  tags = merge(var.tags, lookup(each.value, "tags", {}))
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }
