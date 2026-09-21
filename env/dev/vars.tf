@@ -732,7 +732,8 @@ variable "subnet_nsg_associations" {
   }
 }
 variable "private_dns_zones" {
-  description = "Private DNS zones used for Azure PaaS private access. VNet link relationships are resolved from the network module output by key."
+  description = "Private DNS zones used by private endpoints."
+
   type = map(object({
     name                = string
     resource_group_name = string
@@ -742,42 +743,60 @@ variable "private_dns_zones" {
 
   validation {
     condition = alltrue([
-      for key, zone in var.private_dns_zones : length(trimspace(zone.name)) > 0 && can(regex("\\.$", zone.name)) && length(trimspace(zone.vnet_key)) > 0
+      for key, zone in var.private_dns_zones :
+      length(trimspace(zone.name)) > 0 &&
+      can(regex(
+        "^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$",
+        trimspace(zone.name)
+      )) &&
+      length(trimspace(zone.vnet_key)) > 0
     ])
-    error_message = "Private DNS zone names must be non-empty and fully qualified domain names; a valid VNet key is required for the VNet link."
+
+    error_message = "Private DNS zone names must be non-empty and valid DNS zone names; a valid VNet key is required for the VNet link."
   }
 }
 
 variable "private_endpoints" {
-  description = "Private endpoints for Azure SQL and other PaaS services. VNet/subnet relationships are resolved from the network module output by key."
+  description = "Private endpoints for Azure SQL and other PaaS services. VNet/subnet and SQL Server relationships are resolved from module outputs by key."
+
   type = map(object({
     name                = string
     location            = string
     resource_group_name = string
-    vnet_key            = string
-    subnet_key          = string
+
+    vnet_key   = string
+    subnet_key = string
+
+    sql_server_key = string
+
     private_service_connection = object({
-      name                           = string
-      private_connection_resource_id = string
-      is_manual_connection           = optional(bool, false)
-      subresource_names              = list(string)
-      request_message                = optional(string, null)
-    })
-    private_dns_zone_group = optional(object({
       name                 = string
-      private_dns_zone_ids = list(string)
-    }), null)
+      is_manual_connection = optional(bool, false)
+      subresource_names    = list(string)
+      request_message      = optional(string, null)
+    })
+
+    private_dns_zone_key = optional(string, null)
+
     tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, endpoint in var.private_endpoints : length(trimspace(endpoint.name)) > 0 && length(trimspace(endpoint.vnet_key)) > 0 && length(trimspace(endpoint.subnet_key)) > 0 && length(endpoint.private_service_connection.subresource_names) > 0
+      for key, endpoint in var.private_endpoints :
+      length(trimspace(endpoint.name)) > 0 &&
+      length(trimspace(endpoint.location)) > 0 &&
+      length(trimspace(endpoint.resource_group_name)) > 0 &&
+      length(trimspace(endpoint.vnet_key)) > 0 &&
+      length(trimspace(endpoint.subnet_key)) > 0 &&
+      length(trimspace(endpoint.sql_server_key)) > 0 &&
+      length(trimspace(endpoint.private_service_connection.name)) > 0 &&
+      length(endpoint.private_service_connection.subresource_names) > 0
     ])
-    error_message = "Private endpoint names, VNet/subnet keys, and service connection subresource names must be defined."
+
+    error_message = "Each private endpoint must define name, location, resource group, VNet key, subnet key, SQL Server key, service connection name, and at least one subresource."
   }
 }
-
 
 variable "bastions" {
   description = "Azure Bastion hosts for secure administrative access. VNet/subnet and public IP relationships are resolved from outputs by key."
@@ -804,5 +823,71 @@ variable "bastions" {
     ])
 
     error_message = "Bastion name, resource group, location, VNet/subnet keys, and public IP key must be defined."
+  }
+}
+
+
+
+
+variable "sql_servers" {
+  description = "Azure SQL logical servers for the workload environment."
+
+  type = map(object({
+    name                = string
+    resource_group_name = string
+    location            = string
+
+    version                       = optional(string, "12.0")
+    administrator_login           = string
+    administrator_login_password  = string
+    minimum_tls_version           = optional(string, "1.2")
+    public_network_access_enabled = optional(bool, false)
+
+    tags = optional(map(string), {})
+  }))
+
+  # sensitive = true
+
+  validation {
+    condition = alltrue([
+      for key, server in var.sql_servers :
+      length(trimspace(server.name)) > 0 &&
+      length(trimspace(server.resource_group_name)) > 0 &&
+      length(trimspace(server.location)) > 0 &&
+      length(trimspace(server.administrator_login)) > 0 &&
+      length(server.administrator_login_password) >= 12
+    ])
+
+    error_message = "Each SQL Server must have a valid name, resource group, location, administrator login, and password of at least 12 characters."
+  }
+}
+
+variable "sql_databases" {
+  description = "Azure SQL databases for the workload environment."
+
+  type = map(object({
+    name                 = string
+    sql_server_key       = string
+    sku_name             = string
+    max_size_gb          = optional(number, 32)
+    zone_redundant       = optional(bool, false)
+    storage_account_type = optional(string, "Geo")
+    collation            = optional(string, "SQL_Latin1_General_CP1_CI_AS")
+    read_scale           = optional(bool, false)
+    geo_backup_enabled   = optional(bool, true)
+
+    tags = optional(map(string), {})
+  }))
+
+  validation {
+    condition = alltrue([
+      for key, database in var.sql_databases :
+      length(trimspace(database.name)) > 0 &&
+      length(trimspace(database.sql_server_key)) > 0 &&
+      length(trimspace(database.sku_name)) > 0 &&
+      database.max_size_gb > 0
+    ])
+
+    error_message = "Each SQL database must have a valid name, SQL Server key, SKU, and positive max_size_gb."
   }
 }
