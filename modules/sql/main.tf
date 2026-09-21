@@ -26,12 +26,12 @@ resource "azurerm_mssql_database" "this" {
 
   sku_name = each.value.sku_name
 
-  max_size_gb            = each.value.max_size_gb
-  zone_redundant         = each.value.zone_redundant
-  storage_account_type   = each.value.storage_account_type
-  collation              = each.value.collation
-  read_scale             = each.value.read_scale
-  geo_backup_enabled     = each.value.geo_backup_enabled
+  max_size_gb          = each.value.max_size_gb
+  zone_redundant       = each.value.zone_redundant
+  storage_account_type = each.value.storage_account_type
+  collation            = each.value.collation
+  read_scale           = each.value.read_scale
+  geo_backup_enabled   = each.value.geo_backup_enabled
 
   tags = merge(
     var.tags,

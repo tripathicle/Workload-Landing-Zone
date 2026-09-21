@@ -13,14 +13,14 @@ variable "storage_accounts" {
   description = "Map of Azure Storage Accounts to provision."
 
   type = map(object({
-    name                       = string
-    resource_group_name        = string
-    account_tier               = optional(string, "Standard")
-    account_replication_type   = optional(string, "LRS")
-    min_tls_version            = optional(string, "TLS1_2")
+    name                            = string
+    resource_group_name             = string
+    account_tier                    = optional(string, "Standard")
+    account_replication_type        = optional(string, "LRS")
+    min_tls_version                 = optional(string, "TLS1_2")
     allow_nested_items_to_be_public = optional(bool, false)
     public_network_access_enabled   = optional(bool, true)
-    tags                       = optional(map(string), {})
+    tags                            = optional(map(string), {})
   }))
 
   validation {
