@@ -466,17 +466,17 @@ module "bastion" {
       resource_group_name = bastion.resource_group_name
       location            = bastion.location
 
-      # CHANGE:
-      # Resolve Bastion subnet dynamically.
-      subnet_id = module.network.subnets[
-        "${bastion.vnet_key}-${bastion.subnet_key}"
-      ].id
+      ip_configuration = {
+        name = "bastion-ip-config"
 
-      # CHANGE:
-      # Resolve Bastion public IP from centralized public-ip module.
-      public_ip_address_id = module.public_ip.public_ips[
-        bastion.public_ip_key
-      ].id
+        subnet_id = module.network.subnets[
+          "${bastion.vnet_key}-${bastion.subnet_key}"
+        ].id
+
+        public_ip_address_id = module.public_ip.public_ips[
+          bastion.public_ip_key
+        ].id
+      }
 
       tags = bastion.tags
     }
