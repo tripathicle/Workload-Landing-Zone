@@ -257,8 +257,6 @@ module "internal_load_balancer" {
       frontend_ip_configuration = {
         name = lb.frontend_ip_configuration.name
 
-        # CHANGE:
-        # Resolve ILB subnet dynamically from network module.
         subnet_id = module.network.subnets[
           "${lb.vnet_key}-${lb.subnet_key}"
         ].id
@@ -268,34 +266,20 @@ module "internal_load_balancer" {
       }
 
       backend_address_pool = {
-        name = lb.backend_address_pool.name
-
-        # CHANGE:
-        # Use backend VM private IPs calculated in locals.
+        name         = lb.backend_address_pool.name
         ip_addresses = local.backend_vm_private_ips
       }
 
-      # CHANGE:
-      # Backend service is standardized around port 8080
-      # with /health endpoint.
-      health_probe = merge(
-        lb.health_probe,
-        {
-          port = try(lb.health_probe.port, 8080)
-          path = try(lb.health_probe.path, "/health")
-        }
-      )
+      health_probe = {
+        name                = lb.health_probe.name
+        protocol            = lb.health_probe.protocol
+        port                = lb.health_probe.port
+        request_path        = lb.health_probe.request_path
+        interval_in_seconds = lb.health_probe.interval_in_seconds
+        number_of_probes    = lb.health_probe.number_of_probes
+      }
 
-      # CHANGE:
-      # Default ILB rule:
-      # frontend 8080 -> backend 8080
-      lb_rule = merge(
-        lb.lb_rule,
-        {
-          frontend_port = try(lb.lb_rule.frontend_port, 8080)
-          backend_port  = try(lb.lb_rule.backend_port, 8080)
-        }
-      )
+      lb_rule = lb.lb_rule
 
       tags = lb.tags
     }
