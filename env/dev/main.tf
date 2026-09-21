@@ -218,45 +218,18 @@ module "vm" {
 # ============================================================
 # SUBNET -> NSG ASSOCIATIONS
 # ============================================================
-# CHANGE:
-# - NSGs are created by module.nsg.
-# - Subnets are created by module.network.
-# - This module connects the two using their outputs.
-#
-# IMPORTANT:
-# The logical keys here must match the keys expected by the
-# nsg-association child module.
-# ============================================================
-
 module "subnet_nsg_association" {
   source = "../../modules/nsg-association"
 
-  subnet_nsg_associations = {
-    frontend = {
-      subnet_name                 = "spoke-frontend"
-      network_security_group_name = "frontend"
-    }
+  # Read the environment-specific association mapping.
+  subnet_nsg_associations = var.subnet_nsg_associations
 
-    backend = {
-      subnet_name                 = "spoke-backend"
-      network_security_group_name = "backend"
-    }
-
-    private_endpoint = {
-      subnet_name                 = "spoke-private_endpoint"
-      network_security_group_name = "private_endpoint"
-    }
-  }
-
-  # CHANGE:
-  # Consume subnet outputs from network module.
+  # Consume subnet objects from the network module.
   subnets = module.network.subnets
 
-  # CHANGE:
-  # Consume NSG outputs from NSG module.
+  # Consume NSG objects from the NSG module.
   nsgs = module.nsg.network_security_groups
 }
-
 
 # ============================================================
 # INTERNAL LOAD BALANCER
