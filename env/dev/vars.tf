@@ -326,32 +326,71 @@ variable "key_vaults" {
 }
 
 variable "network_security_groups" {
-  description = "NSGs for ingress and app traffic. Rules must be explicit, ordered, and least-privilege by design."
+  description = "Network Security Group definitions for the workload environment."
+
   type = map(object({
     name                = string
     resource_group_name = string
     location            = string
+
     security_rules = map(object({
-      name                       = string
-      priority                   = number
-      direction                  = string
-      access                     = string
-      protocol                   = string
-      source_port_range          = optional(string, "*")
-      destination_port_range     = optional(string, "*")
-      source_address_prefix      = optional(string, "*")
-      destination_address_prefix = optional(string, "*")
+      name                        = string
+      priority                    = number
+      direction                   = string
+      access                      = string
+      protocol                    = string
+      source_port_range           = optional(string, "*")
+      destination_port_range      = optional(string, "*")
+      source_address_prefix       = optional(string, "*")
+      destination_address_prefix  = optional(string, "*")
     }))
+
     tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, nsg in var.network_security_groups : length(trimspace(nsg.name)) > 0 && alltrue([
-        for rule_key, rule in nsg.security_rules : rule.priority >= 100 && rule.priority <= 4096 && contains(["Inbound", "Outbound"], rule.direction) && contains(["Allow", "Deny"], rule.access)
+      for key, nsg in var.network_security_groups :
+      length(trimspace(nsg.name)) > 0 &&
+      length(trimspace(nsg.resource_group_name)) > 0 &&
+      length(trimspace(nsg.location)) > 0
+    ])
+
+    error_message = "Each NSG must define a non-empty name, resource group name, and location."
+  }
+
+  validation {
+    condition = alltrue([
+      for nsg_key, nsg in var.network_security_groups :
+      alltrue([
+        for rule_key, rule in nsg.security_rules :
+        rule.priority >= 100 &&
+        rule.priority <= 4096 &&
+        contains(["Inbound", "Outbound"], rule.direction) &&
+        contains(["Allow", "Deny"], rule.access) &&
+        contains(
+          ["Tcp", "Udp", "Icmp", "Esp", "Ah", "*"],
+          rule.protocol
+        )
       ])
     ])
-    error_message = "Each NSG name must be non-empty; every security rule priority must be between 100 and 4096 and include valid direction and access values."
+
+    error_message = "Each NSG rule must have a priority between 100 and 4096, valid direction, access, and protocol."
+  }
+
+  validation {
+    condition = alltrue([
+      for nsg_key, nsg in var.network_security_groups :
+      length([
+        for rule_key, rule in nsg.security_rules :
+        rule.priority
+      ]) == length(distinct([
+        for rule_key, rule in nsg.security_rules :
+        rule.priority
+      ]))
+    ])
+
+    error_message = "Security rule priorities must be unique within each NSG."
   }
 }
 
