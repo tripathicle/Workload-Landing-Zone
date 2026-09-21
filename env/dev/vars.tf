@@ -281,24 +281,33 @@ variable "application_insights" {
 
 # APPLICATION GATEWAYS
 variable "application_gateways" {
-
-  description = "Application Gateway for public ingress and TLS termination. VNet and public IP relationships are resolved from module outputs by key."
+  description = "Application Gateway definitions for workload ingress."
 
   type = map(object({
-
     name                = string
     resource_group_name = string
     location            = string
-
-    vnet_key      = string
-    subnet_key    = string
-    public_ip_key = string
 
     sku = object({
       name     = string
       tier     = string
       capacity = number
     })
+
+    waf_configuration = optional(object({
+      enabled                  = optional(bool, true)
+      firewall_mode            = optional(string, "Prevention")
+      rule_set_type            = optional(string, "OWASP")
+      rule_set_version         = optional(string, "3.2")
+      file_upload_limit_mb     = optional(number, 100)
+      request_body_check       = optional(bool, true)
+      max_request_body_size_kb = optional(number, 128)
+    }), null)
+
+    vnet_key   = string
+    subnet_key = string
+
+    public_ip_key = string
 
     gateway_ip_configuration = object({
       name = string
@@ -358,15 +367,28 @@ variable "application_gateways" {
     condition = alltrue([
       for key, gateway in var.application_gateways :
       length(trimspace(gateway.name)) > 0 &&
+      length(trimspace(gateway.resource_group_name)) > 0 &&
+      length(trimspace(gateway.location)) > 0 &&
       length(trimspace(gateway.vnet_key)) > 0 &&
       length(trimspace(gateway.subnet_key)) > 0 &&
-      length(trimspace(gateway.public_ip_key)) > 0 &&
-      gateway.sku.capacity >= 1 &&
-      gateway.frontend_port.port >= 1 &&
-      gateway.frontend_port.port <= 65535
+      length(trimspace(gateway.public_ip_key)) > 0
     ])
 
-    error_message = "Application Gateway names must be non-empty, VNet/subnet/public IP keys must be defined, capacity must be at least 1, and frontend ports must be valid TCP/UDP ports."
+    error_message = "Each Application Gateway must define valid resource, network, subnet, and public IP references."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, gateway in var.application_gateways :
+      gateway.frontend_port.port >= 1 &&
+      gateway.frontend_port.port <= 65535 &&
+      gateway.health_probe.port >= 1 &&
+      gateway.health_probe.port <= 65535 &&
+      gateway.backend_http_settings.port >= 1 &&
+      gateway.backend_http_settings.port <= 65535
+    ])
+
+    error_message = "Application Gateway ports must be between 1 and 65535."
   }
 }
 
