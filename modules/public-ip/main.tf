@@ -8,6 +8,8 @@
 # - sku: (Optional) Public IP SKU.
 # - zones: (Optional) Availability zones.
 # - tags: (Optional) Resource tags.
+
+
 resource "azurerm_public_ip" "this" {
   for_each = var.public_ips
 
@@ -16,6 +18,10 @@ resource "azurerm_public_ip" "this" {
   location            = each.value.location
   allocation_method   = each.value.allocation_method
   sku                 = each.value.sku
-  zones               = lookup(each.value, "zones", [])
-  tags                = merge(var.tags, lookup(each.value, "tags", {}))
+  zones               = each.value.zones
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }

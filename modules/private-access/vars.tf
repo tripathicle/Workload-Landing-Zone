@@ -1,10 +1,10 @@
 variable "private_dns_zones" {
   description = "Private DNS zones for future private endpoint integrations"
   type = map(object({
-    name               = string
+    name                = string
     resource_group_name = string
-    virtual_network_id = optional(string, null)
-    tags               = optional(map(string), {})
+    virtual_network_id  = optional(string, null)
+    tags                = optional(map(string), {})
   }))
 }
 

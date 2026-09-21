@@ -15,8 +15,8 @@ variable "vnets" {
     resource_group_name = string
     address_space       = list(string)
     subnets = map(object({
-      name             = string
-      address_prefixes = list(string)
+      name              = string
+      address_prefixes  = list(string)
       service_endpoints = optional(list(string), [])
     }))
     tags = optional(map(string), {})

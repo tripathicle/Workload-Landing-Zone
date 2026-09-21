@@ -45,12 +45,12 @@ resource "azurerm_virtual_network_peering" "this" {
     for pair in flatten([
       for source_key, source_vnet in var.vnets : [
         for target_key, target_vnet in var.vnets : {
-          source_key           = source_key
-          target_key           = target_key
-          source_vnet_name     = source_vnet.name
-          source_rg_name       = source_vnet.resource_group_name
-          target_vnet_name     = target_vnet.name
-          target_rg_name       = target_vnet.resource_group_name
+          source_key       = source_key
+          target_key       = target_key
+          source_vnet_name = source_vnet.name
+          source_rg_name   = source_vnet.resource_group_name
+          target_vnet_name = target_vnet.name
+          target_rg_name   = target_vnet.resource_group_name
         }
         if source_key != target_key
       ]

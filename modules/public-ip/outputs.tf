@@ -1,5 +1,6 @@
 output "public_ips" {
-  description = "Map of public IP resource metadata"
+  description = "Map of provisioned Public IP resource metadata."
+
   value = {
     for key, ip in azurerm_public_ip.this : key => {
       id   = ip.id

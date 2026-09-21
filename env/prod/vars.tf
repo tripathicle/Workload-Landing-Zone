@@ -87,8 +87,8 @@ variable "load_balancers" {
     subnet_key          = string
     sku                 = optional(string, "Standard")
     frontend_ip_configuration = object({
-      name               = string
-      private_ip_address = string
+      name                 = string
+      private_ip_address   = string
       private_ip_addresses = optional(list(string), [])
     })
     backend_address_pool = object({
@@ -153,14 +153,14 @@ variable "network_interfaces" {
 variable "linux_virtual_machines" {
   description = "Linux VM definitions for the app tier"
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    size                = string
-    admin_username      = string
-    admin_password      = string
+    name                 = string
+    resource_group_name  = string
+    location             = string
+    size                 = string
+    admin_username       = string
+    admin_password       = string
     network_interface_id = string
-    custom_data         = optional(string, null)
+    custom_data          = optional(string, null)
     os_disk = object({
       caching              = string
       storage_account_type = string
@@ -179,7 +179,7 @@ variable "linux_virtual_machines" {
 variable "subnet_nsg_associations" {
   description = "Map of subnet names to NSG names. The child association module resolves the Azure IDs from upstream module outputs."
   type = map(object({
-    subnet_name                = string
+    subnet_name                 = string
     network_security_group_name = string
   }))
   default = {}

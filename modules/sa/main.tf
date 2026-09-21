@@ -13,13 +13,13 @@
 resource "azurerm_storage_account" "this" {
   for_each = var.storage_accounts
 
-  name                     = each.value.name
-  resource_group_name      = each.value.resource_group_name
-  location                 = var.location
-  account_tier             = each.value.account_tier
-  account_replication_type = each.value.account_replication_type
-  min_tls_version          = "TLS1_2"
+  name                            = each.value.name
+  resource_group_name             = each.value.resource_group_name
+  location                        = var.location
+  account_tier                    = each.value.account_tier
+  account_replication_type        = each.value.account_replication_type
+  min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
   public_network_access_enabled   = true
-  tags = merge(var.tags, each.value.tags)
+  tags                            = merge(var.tags, each.value.tags)
 }
