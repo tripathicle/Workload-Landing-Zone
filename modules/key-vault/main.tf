@@ -10,16 +10,28 @@
 # - soft_delete_retention_days: (Optional) Number of days to retain soft-deleted vaults.
 # - public_network_access_enabled: (Optional) Allows public network access.
 # - tags: (Optional) Resource tags.
+
+
 resource "azurerm_key_vault" "this" {
   for_each = var.key_vaults
 
-  name                          = each.value.name
-  location                      = each.value.location
-  resource_group_name           = each.value.resource_group_name
-  tenant_id                     = each.value.tenant_id
-  sku_name                      = each.value.sku_name
-  purge_protection_enabled      = each.value.purge_protection_enabled
-  soft_delete_retention_days    = each.value.soft_delete_retention_days
+  name                = each.value.name
+  location            = each.value.location
+  resource_group_name = each.value.resource_group_name
+
+  tenant_id = each.value.tenant_id
+
+  sku_name = each.value.sku_name
+
+  enable_rbac_authorization = each.value.enable_rbac_authorization
+
+  purge_protection_enabled   = each.value.purge_protection_enabled
+  soft_delete_retention_days = each.value.soft_delete_retention_days
+
   public_network_access_enabled = each.value.public_network_access_enabled
-  tags                          = merge(var.tags, lookup(each.value, "tags", {}))
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }

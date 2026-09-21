@@ -296,7 +296,8 @@ module "key_vault" {
   source = "../../modules/key-vault"
 
   key_vaults = var.key_vaults
-  tags       = var.tags
+
+  tags = var.tags
 }
 
 
