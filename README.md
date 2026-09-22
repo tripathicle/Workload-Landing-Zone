@@ -94,8 +94,6 @@ This document describes the complete architecture for a **Todo Monolithic 3-Tier
 
 ### High-Level Topology
 
-## 🏗️ Architecture Diagram
-
 ```mermaid
 %%{init: {
   'theme': 'base',
