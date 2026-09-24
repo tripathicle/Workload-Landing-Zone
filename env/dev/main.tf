@@ -427,9 +427,11 @@ module "private_access" {
 
       private_service_connection = {
         name = endpoint.private_service_connection.name
-        private_connection_resource_id = module.sql.sql_servers[
-          endpoint.sql_server_key
-        ].id
+
+        private_connection_resource_id = local.private_endpoint_targets[
+          endpoint.target_key
+        ]
+
         is_manual_connection = endpoint.private_service_connection.is_manual_connection
         subresource_names    = endpoint.private_service_connection.subresource_names
         request_message      = endpoint.private_service_connection.request_message
@@ -497,4 +499,13 @@ module "sql" {
   sql_servers   = var.sql_servers
   sql_databases = var.sql_databases
   tags          = var.tags
+}
+
+module "postgresql" {
+  source = "../../modules/postgresql"
+
+  postgresql_servers   = var.postgresql_servers
+  postgresql_databases = var.postgresql_databases
+
+  tags = var.tags
 }

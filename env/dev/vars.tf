@@ -731,33 +731,8 @@ variable "subnet_nsg_associations" {
     error_message = "Each subnet-to-NSG association must define a non-empty subnet key and NSG key."
   }
 }
-variable "private_dns_zones" {
-  description = "Private DNS zones used by private endpoints."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    vnet_key            = string
-    tags                = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, zone in var.private_dns_zones :
-      length(trimspace(zone.name)) > 0 &&
-      can(regex(
-        "^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$",
-        trimspace(zone.name)
-      )) &&
-      length(trimspace(zone.vnet_key)) > 0
-    ])
-
-    error_message = "Private DNS zone names must be non-empty and valid DNS zone names; a valid VNet key is required for the VNet link."
-  }
-}
-
 variable "private_endpoints" {
-  description = "Private endpoints for Azure SQL and other PaaS services. VNet/subnet and SQL Server relationships are resolved from module outputs by key."
+  description = "Generic Azure Private Endpoints. Target resources are resolved from Terraform module outputs using a logical target key."
 
   type = map(object({
     name                = string
@@ -767,7 +742,7 @@ variable "private_endpoints" {
     vnet_key   = string
     subnet_key = string
 
-    sql_server_key = string
+    target_key = string
 
     private_service_connection = object({
       name                 = string
@@ -789,12 +764,38 @@ variable "private_endpoints" {
       length(trimspace(endpoint.resource_group_name)) > 0 &&
       length(trimspace(endpoint.vnet_key)) > 0 &&
       length(trimspace(endpoint.subnet_key)) > 0 &&
-      length(trimspace(endpoint.sql_server_key)) > 0 &&
+      length(trimspace(endpoint.target_key)) > 0 &&
       length(trimspace(endpoint.private_service_connection.name)) > 0 &&
       length(endpoint.private_service_connection.subresource_names) > 0
     ])
 
-    error_message = "Each private endpoint must define name, location, resource group, VNet key, subnet key, SQL Server key, service connection name, and at least one subresource."
+    error_message = "Each private endpoint must define name, location, resource group, VNet key, subnet key, target key, service connection name, and at least one subresource."
+  }
+}
+
+variable "private_dns_zones" {
+  description = "Private DNS zones used by Azure Private Endpoints."
+
+  type = map(object({
+    name                = string
+    resource_group_name = string
+    vnet_key            = string
+    tags                = optional(map(string), {})
+  }))
+
+  validation {
+    condition = alltrue([
+      for key, zone in var.private_dns_zones :
+      length(trimspace(zone.name)) > 0 &&
+      can(regex(
+        "^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$",
+        trimspace(zone.name)
+      )) &&
+      length(trimspace(zone.resource_group_name)) > 0 &&
+      length(trimspace(zone.vnet_key)) > 0
+    ])
+
+    error_message = "Each Private DNS zone must define a valid DNS zone name, resource group name, and VNet key."
   }
 }
 
@@ -889,5 +890,70 @@ variable "sql_databases" {
     ])
 
     error_message = "Each SQL database must have a valid name, SQL Server key, SKU, and positive max_size_gb."
+  }
+}
+
+variable "postgresql_servers" {
+  description = "Azure Database for PostgreSQL Flexible Servers for the workload environment."
+
+  type = map(object({
+    name                = string
+    resource_group_name = string
+    location            = string
+
+    version    = optional(string, "16")
+    sku_name   = string
+    storage_mb = optional(number, 32768)
+
+    administrator_login    = string
+    administrator_password = string
+
+    backup_retention_days        = optional(number, 7)
+    geo_redundant_backup_enabled = optional(bool, false)
+
+    public_network_access_enabled = optional(bool, false)
+
+    zone = optional(string, null)
+
+    tags = optional(map(string), {})
+  }))
+
+  validation {
+    condition = alltrue([
+      for key, server in var.postgresql_servers :
+      length(trimspace(server.name)) > 0 &&
+      length(trimspace(server.resource_group_name)) > 0 &&
+      length(trimspace(server.location)) > 0 &&
+      length(trimspace(server.administrator_login)) > 0 &&
+      length(server.administrator_password) >= 12 &&
+      length(trimspace(server.sku_name)) > 0
+    ])
+
+    error_message = "Each PostgreSQL server must define a valid name, resource group, location, administrator login, password of at least 12 characters, and SKU."
+  }
+}
+
+
+variable "postgresql_databases" {
+  description = "PostgreSQL databases for the workload environment."
+
+  type = map(object({
+    name                  = string
+    postgresql_server_key = string
+
+    charset   = optional(string, "UTF8")
+    collation = optional(string, "en_US.utf8")
+
+    tags = optional(map(string), {})
+  }))
+
+  validation {
+    condition = alltrue([
+      for key, database in var.postgresql_databases :
+      length(trimspace(database.name)) > 0 &&
+      length(trimspace(database.postgresql_server_key)) > 0
+    ])
+
+    error_message = "Each PostgreSQL database must define a valid name and PostgreSQL server key."
   }
 }
