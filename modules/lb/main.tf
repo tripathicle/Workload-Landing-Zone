@@ -36,12 +36,11 @@ resource "azurerm_lb" "this" {
   frontend_ip_configuration {
     name = each.value.frontend_ip_configuration.name
 
-    # The subnet is resolved by the parent environment.
-    # This keeps the child module reusable and prevents
-    # hardcoding VNet/subnet names inside the module.
+    # IMPORTANT:
+    # The ILB frontend private IP is placed in the backend subnet.
+    # Frontend VMs reach this private IP from the frontend subnet.
     subnet_id = each.value.frontend_ip_configuration.subnet_id
 
-    # The ILB uses a fixed private IP.
     private_ip_address = each.value.frontend_ip_configuration.private_ip_address
 
     private_ip_address_allocation = "Static"
@@ -60,25 +59,22 @@ resource "azurerm_lb_backend_address_pool" "this" {
   loadbalancer_id = azurerm_lb.this[each.key].id
 }
 
-# Registers backend VM private IP addresses in the backend pool.
-#
-# We intentionally register IP addresses instead of NIC references.
-# This makes the LB module independent from the NIC module implementation.
 resource "azurerm_lb_backend_address_pool_address" "this" {
   for_each = {
     for item in flatten([
       for lb_key, lb in var.load_balancers : [
         for ip in lb.backend_address_pool.ip_addresses : {
-          key                 = "${lb_key}-${replace(ip, ".", "-")}"
-          load_balancer_key   = lb_key
-          ip_address          = ip
-          virtual_network_id  = lb.frontend_ip_configuration.vnet_id
+          key                = "${lb_key}-${replace(ip, ".", "-")}"
+          load_balancer_key  = lb_key
+          ip_address         = ip
+          virtual_network_id = lb.frontend_ip_configuration.vnet_id
         }
       ]
     ]) : item.key => item
   }
 
-  name                    = each.key
+  name = each.key
+
   backend_address_pool_id = azurerm_lb_backend_address_pool.this[
     each.value.load_balancer_key
   ].id
@@ -93,9 +89,14 @@ resource "azurerm_lb_probe" "this" {
   name            = each.value.health_probe.name
   loadbalancer_id = azurerm_lb.this[each.key].id
 
-  protocol            = each.value.health_probe.protocol
-  port                = each.value.health_probe.port
-  request_path        = each.value.health_probe.request_path
+  protocol = each.value.health_probe.protocol
+  port     = each.value.health_probe.port
+
+  request_path = (
+    each.value.health_probe.protocol == "Http" ||
+    each.value.health_probe.protocol == "Https"
+  ) ? each.value.health_probe.request_path : null
+
   interval_in_seconds = each.value.health_probe.interval_in_seconds
   number_of_probes    = each.value.health_probe.number_of_probes
 }
@@ -117,7 +118,7 @@ resource "azurerm_lb_rule" "this" {
 
   probe_id = azurerm_lb_probe.this[each.key].id
 
-  enable_floating_ip       = each.value.lb_rule.enable_floating_ip
-  idle_timeout_in_minutes  = each.value.lb_rule.idle_timeout_in_minutes
-  enable_tcp_reset         = each.value.lb_rule.enable_tcp_reset
+  enable_floating_ip      = each.value.lb_rule.enable_floating_ip
+  idle_timeout_in_minutes = each.value.lb_rule.idle_timeout_in_minutes
+  enable_tcp_reset        = each.value.lb_rule.enable_tcp_reset
 }
