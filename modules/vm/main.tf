@@ -24,18 +24,30 @@ resource "azurerm_linux_virtual_machine" "this" {
 
   admin_username = each.value.admin_username
 
-  admin_password = each.value.admin_ssh_key != null ? null : each.value.admin_password
+  admin_password = (
+    each.value.admin_ssh_key != null &&
+    length(trimspace(each.value.admin_ssh_key)) > 0
+  ) ? null : each.value.admin_password
 
-  disable_password_authentication = each.value.admin_ssh_key != null
+  disable_password_authentication = (
+    each.value.admin_ssh_key != null &&
+    length(trimspace(each.value.admin_ssh_key)) > 0
+  )
 
   network_interface_ids = [
     each.value.network_interface_id
   ]
 
-  custom_data = each.value.custom_data != null ? base64encode(each.value.custom_data) : null
+  custom_data = (
+    each.value.custom_data != null &&
+    length(trimspace(each.value.custom_data)) > 0
+  ) ? base64encode(each.value.custom_data) : null
 
   dynamic "admin_ssh_key" {
-    for_each = each.value.admin_ssh_key != null ? [each.value.admin_ssh_key] : []
+    for_each = (
+      each.value.admin_ssh_key != null &&
+      length(trimspace(each.value.admin_ssh_key)) > 0
+    ) ? [each.value.admin_ssh_key] : []
 
     content {
       username   = each.value.admin_username
@@ -44,12 +56,70 @@ resource "azurerm_linux_virtual_machine" "this" {
   }
 
   dynamic "identity" {
-    for_each = each.value.identity_type != null ? [each.value.identity_type] : []
+    for_each = (
+      each.value.identity_type != null
+    ) ? [each.value.identity_type] : []
 
     content {
       type = identity.value
     }
   }
+
+  # Azure-managed boot diagnostics.
+  # No dedicated boot-diagnostics storage account is required.
+  boot_diagnostics {}
+
+  os_disk {
+    caching              = each.value.os_disk.caching
+    storage_account_type = each.value.os_disk.storage_account_type
+  }
+
+  source_image_reference {
+    publisher = each.value.source_image_reference.publisher
+    offer     = each.value.source_image_reference.offer
+    sku       = each.value.source_image_reference.sku
+    version   = each.value.source_image_reference.version
+  }
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
+}
+
+
+resource "azurerm_windows_virtual_machine" "this" {
+  for_each = var.windows_virtual_machines
+
+  name                = each.value.name
+  resource_group_name = each.value.resource_group_name
+  location            = each.value.location
+  size                = each.value.size
+
+  admin_username = each.value.admin_username
+  admin_password = each.value.admin_password
+
+  network_interface_ids = [
+    each.value.network_interface_id
+  ]
+
+  custom_data = (
+    each.value.custom_data != null &&
+    length(trimspace(each.value.custom_data)) > 0
+  ) ? base64encode(each.value.custom_data) : null
+
+  dynamic "identity" {
+    for_each = (
+      each.value.identity_type != null
+    ) ? [each.value.identity_type] : []
+
+    content {
+      type = identity.value
+    }
+  }
+
+  # Azure-managed boot diagnostics.
+  boot_diagnostics {}
 
   os_disk {
     caching              = each.value.os_disk.caching

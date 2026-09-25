@@ -115,3 +115,4 @@ resource "azurerm_lb_rule" "this" {
   load_distribution     = each.value.lb_rule.load_distribution
   disable_outbound_snat = true
 }
+

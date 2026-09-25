@@ -658,7 +658,7 @@ variable "network_interfaces" {
 }
 
 variable "linux_virtual_machines" {
-  description = "Linux VM definitions for the workload tier. NIC relationships are resolved from the network interface module by key."
+  description = "Linux workload virtual machines for the environment."
 
   type = map(object({
     name                = string
@@ -691,71 +691,44 @@ variable "linux_virtual_machines" {
     tags = optional(map(string), {})
   }))
 
-  validation {
-    condition = alltrue([
-      for key, vm in var.linux_virtual_machines :
-      length(trimspace(vm.name)) > 0 &&
-      length(trimspace(vm.resource_group_name)) > 0 &&
-      length(trimspace(vm.location)) > 0 &&
-      length(trimspace(vm.size)) > 0 &&
-      length(trimspace(vm.admin_username)) > 0 &&
-      length(trimspace(vm.nic_key)) > 0
-    ])
+  default = {}
+}
 
-    error_message = "Each Linux VM must define a non-empty name, resource group, location, size, admin username, and NIC key."
-  }
 
-  validation {
-    condition = alltrue([
-      for key, vm in var.linux_virtual_machines :
-      vm.admin_ssh_key != null ||
-      (
-        vm.admin_password != null &&
-        length(trimspace(vm.admin_password)) >= 12
-      )
-    ])
+variable "windows_virtual_machines" {
+  description = "Windows workload virtual machines for the environment."
 
-    error_message = "Each Linux VM must provide either an SSH public key or an admin password of at least 12 characters."
-  }
+  type = map(object({
+    name                = string
+    resource_group_name = string
+    location            = string
+    size                = string
 
-  validation {
-    condition = alltrue([
-      for key, vm in var.linux_virtual_machines :
-      vm.identity_type == null ||
-      contains(
-        [
-          "SystemAssigned",
-          "UserAssigned",
-          "SystemAssigned, UserAssigned"
-        ],
-        vm.identity_type
-      )
-    ])
+    admin_username = string
+    admin_password = string
 
-    error_message = "identity_type must be SystemAssigned, UserAssigned, SystemAssigned, UserAssigned, or null."
-  }
+    nic_key = string
 
-  validation {
-    condition = alltrue([
-      for key, vm in var.linux_virtual_machines :
-      length(trimspace(vm.os_disk.caching)) > 0 &&
-      length(trimspace(vm.os_disk.storage_account_type)) > 0
-    ])
+    custom_data = optional(string, null)
 
-    error_message = "Each Linux VM must define valid OS disk caching and storage account type values."
-  }
+    identity_type = optional(string, "SystemAssigned")
 
-  validation {
-    condition = alltrue([
-      for key, vm in var.linux_virtual_machines :
-      length(trimspace(vm.source_image_reference.publisher)) > 0 &&
-      length(trimspace(vm.source_image_reference.offer)) > 0 &&
-      length(trimspace(vm.source_image_reference.sku)) > 0 &&
-      length(trimspace(vm.source_image_reference.version)) > 0
-    ])
+    os_disk = object({
+      caching              = string
+      storage_account_type = string
+    })
 
-    error_message = "Each Linux VM must define publisher, offer, SKU, and version for the source image."
-  }
+    source_image_reference = object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = string
+    })
+
+    tags = optional(map(string), {})
+  }))
+
+  default = {}
 }
 
 # ============================================================
