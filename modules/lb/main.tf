@@ -10,9 +10,20 @@
 
 
 
-# ============================================================
-# INTERNAL AZURE LOAD BALANCER
-# ============================================================
+# Creates a reusable Azure Internal Load Balancer.
+# The module supports:
+# - Private frontend IP
+# - Backend VM private IP registration
+# - HTTP health probe
+# - TCP load-balancing rule
+#
+# This module does NOT create:
+# - Public IP
+# - NSG
+# - VM/NIC
+# - Subnet
+#
+# Those resources remain owned by their respective modules.
 
 resource "azurerm_lb" "this" {
   for_each = var.load_balancers
@@ -23,9 +34,16 @@ resource "azurerm_lb" "this" {
   sku                 = each.value.sku
 
   frontend_ip_configuration {
-    name                          = each.value.frontend_ip_configuration.name
-    subnet_id                     = each.value.frontend_ip_configuration.subnet_id
-    private_ip_address            = each.value.frontend_ip_configuration.private_ip_address
+    name = each.value.frontend_ip_configuration.name
+
+    # The subnet is resolved by the parent environment.
+    # This keeps the child module reusable and prevents
+    # hardcoding VNet/subnet names inside the module.
+    subnet_id = each.value.frontend_ip_configuration.subnet_id
+
+    # The ILB uses a fixed private IP.
+    private_ip_address = each.value.frontend_ip_configuration.private_ip_address
+
     private_ip_address_allocation = "Static"
   }
 
@@ -35,54 +53,46 @@ resource "azurerm_lb" "this" {
   )
 }
 
-
-# ============================================================
-# BACKEND ADDRESS POOL
-# ============================================================
-
 resource "azurerm_lb_backend_address_pool" "this" {
   for_each = var.load_balancers
 
-  loadbalancer_id = azurerm_lb.this[each.key].id
   name            = each.value.backend_address_pool.name
+  loadbalancer_id = azurerm_lb.this[each.key].id
 }
 
-
-# ============================================================
-# BACKEND POOL ADDRESSES
-# ============================================================
-
+# Registers backend VM private IP addresses in the backend pool.
+#
+# We intentionally register IP addresses instead of NIC references.
+# This makes the LB module independent from the NIC module implementation.
 resource "azurerm_lb_backend_address_pool_address" "this" {
-  for_each = merge([
-    for lb_key, lb in var.load_balancers : {
-      for ip_index, ip_address in lb.backend_address_pool.ip_addresses :
-      "${lb_key}-${ip_index}" => {
-        lb_key     = lb_key
-        ip_address = ip_address
-      }
-    }
-  ]...)
+  for_each = {
+    for item in flatten([
+      for lb_key, lb in var.load_balancers : [
+        for ip in lb.backend_address_pool.ip_addresses : {
+          key                 = "${lb_key}-${replace(ip, ".", "-")}"
+          load_balancer_key   = lb_key
+          ip_address          = ip
+          virtual_network_id  = lb.frontend_ip_configuration.vnet_id
+        }
+      ]
+    ]) : item.key => item
+  }
 
-  name = "${each.value.lb_key}-backend-${each.key}"
-
+  name                    = each.key
   backend_address_pool_id = azurerm_lb_backend_address_pool.this[
-    each.value.lb_key
+    each.value.load_balancer_key
   ].id
 
-  ip_address = each.value.ip_address
+  ip_address         = each.value.ip_address
+  virtual_network_id = each.value.virtual_network_id
 }
-
-
-# ============================================================
-# HEALTH PROBE
-# ============================================================
 
 resource "azurerm_lb_probe" "this" {
   for_each = var.load_balancers
 
+  name            = each.value.health_probe.name
   loadbalancer_id = azurerm_lb.this[each.key].id
 
-  name                = each.value.health_probe.name
   protocol            = each.value.health_probe.protocol
   port                = each.value.health_probe.port
   request_path        = each.value.health_probe.request_path
@@ -90,21 +100,16 @@ resource "azurerm_lb_probe" "this" {
   number_of_probes    = each.value.health_probe.number_of_probes
 }
 
-
-# ============================================================
-# LOAD BALANCER RULE
-# ============================================================
-
 resource "azurerm_lb_rule" "this" {
   for_each = var.load_balancers
 
+  name            = each.value.lb_rule.name
   loadbalancer_id = azurerm_lb.this[each.key].id
 
-  name                           = each.value.lb_rule.name
   protocol                       = each.value.lb_rule.protocol
   frontend_port                  = each.value.lb_rule.frontend_port
   backend_port                   = each.value.lb_rule.backend_port
-  frontend_ip_configuration_name = each.value.lb_rule.frontend_ip_configuration_name
+  frontend_ip_configuration_name = each.value.frontend_ip_configuration.name
 
   backend_address_pool_ids = [
     azurerm_lb_backend_address_pool.this[each.key].id
@@ -112,7 +117,7 @@ resource "azurerm_lb_rule" "this" {
 
   probe_id = azurerm_lb_probe.this[each.key].id
 
-  load_distribution     = each.value.lb_rule.load_distribution
-  disable_outbound_snat = true
+  enable_floating_ip       = each.value.lb_rule.enable_floating_ip
+  idle_timeout_in_minutes  = each.value.lb_rule.idle_timeout_in_minutes
+  enable_tcp_reset         = each.value.lb_rule.enable_tcp_reset
 }
-
