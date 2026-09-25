@@ -192,7 +192,35 @@ module "vm" {
       admin_password = vm.admin_password
       admin_ssh_key  = vm.admin_ssh_key
 
-      network_interface_id = module.nic.network_interfaces[vm.nic_key].id
+      network_interface_id = module.nic.network_interfaces[
+        vm.nic_key
+      ].id
+
+      custom_data = vm.custom_data
+
+      identity_type = vm.identity_type
+
+      os_disk = vm.os_disk
+
+      source_image_reference = vm.source_image_reference
+
+      tags = vm.tags
+    }
+  }
+
+  windows_virtual_machines = {
+    for key, vm in var.windows_virtual_machines : key => {
+      name                = vm.name
+      resource_group_name = vm.resource_group_name
+      location            = vm.location
+      size                = vm.size
+
+      admin_username = vm.admin_username
+      admin_password = vm.admin_password
+
+      network_interface_id = module.nic.network_interfaces[
+        vm.nic_key
+      ].id
 
       custom_data = vm.custom_data
 
