@@ -6,14 +6,22 @@
 # - location: (Required) Azure region for the VNet.
 # - address_space: (Required) CIDR range for the VNet.
 # - tags: (Optional) Tags applied to the VNet.
+
+
 locals {
   subnets = merge([
     for vnet_key, vnet in var.vnets : {
-      for subnet_key, subnet in vnet.subnets : "${vnet_key}-${subnet_key}" => {
-        vnet_name           = vnet.name
-        resource_group_name = vnet.resource_group_name
-        subnet_name         = subnet.name
-        address_prefixes    = subnet.address_prefixes
+      for subnet_key, subnet in vnet.subnets :
+      "${vnet_key}-${subnet_key}" => {
+        vnet_key                                      = vnet_key
+        subnet_key                                    = subnet_key
+        vnet_name                                     = vnet.name
+        resource_group_name                           = vnet.resource_group_name
+        subnet_name                                   = subnet.name
+        address_prefixes                              = subnet.address_prefixes
+        service_endpoints                             = subnet.service_endpoints
+        private_endpoint_network_policies             = subnet.private_endpoint_network_policies
+        private_link_service_network_policies_enabled = subnet.private_link_service_network_policies_enabled
       }
     }
   ]...)
@@ -26,7 +34,11 @@ resource "azurerm_virtual_network" "this" {
   location            = var.location
   resource_group_name = each.value.resource_group_name
   address_space       = each.value.address_space
-  tags                = merge(var.tags, lookup(each.value, "tags", {}))
+
+  tags = merge(
+    var.tags,
+    each.value.tags
+  )
 }
 
 resource "azurerm_subnet" "this" {
@@ -37,7 +49,13 @@ resource "azurerm_subnet" "this" {
   virtual_network_name = each.value.vnet_name
   address_prefixes     = each.value.address_prefixes
 
-  service_endpoints = lookup(var.vnets[split("-", each.key)[0]], "subnets", {})[split("-", each.key)[1]].service_endpoints
+  service_endpoints = each.value.service_endpoints
+
+  private_endpoint_network_policies = each.value.private_endpoint_network_policies
+
+  private_link_service_network_policies_enabled = (
+    each.value.private_link_service_network_policies_enabled
+  )
 }
 
 resource "azurerm_virtual_network_peering" "this" {
@@ -54,13 +72,19 @@ resource "azurerm_virtual_network_peering" "this" {
         }
         if source_key != target_key
       ]
-    ]) : "${pair.source_key}-to-${pair.target_key}" => pair
+    ]) :
+    "${pair.source_key}-to-${pair.target_key}" => pair
   }
 
-  name                         = "${each.value.source_key}-to-${each.value.target_key}"
-  resource_group_name          = each.value.source_rg_name
-  virtual_network_name         = azurerm_virtual_network.this[each.value.source_key].name
-  remote_virtual_network_id    = azurerm_virtual_network.this[each.value.target_key].id
+  name = "${each.value.source_key}-to-${each.value.target_key}"
+
+  resource_group_name  = each.value.source_rg_name
+  virtual_network_name = azurerm_virtual_network.this[each.value.source_key].name
+
+  remote_virtual_network_id = azurerm_virtual_network.this[
+    each.value.target_key
+  ].id
+
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
   allow_gateway_transit        = false

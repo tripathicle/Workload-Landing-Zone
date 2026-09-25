@@ -141,23 +141,72 @@ variable "storage_accounts" {
 
 variable "vnets" {
   description = "Map of VNets for the hub-spoke landing zone. Each VNet must use RFC1918 private address space and valid subnet ranges."
+
   type = map(object({
     name                = string
     resource_group_name = string
     address_space       = list(string)
+
     subnets = map(object({
-      name              = string
-      address_prefixes  = list(string)
-      service_endpoints = optional(list(string), [])
+      name                                = string
+      address_prefixes                    = list(string)
+      service_endpoints                   = optional(list(string), [])
+      private_endpoint_network_policies   = optional(string, "Disabled")
+      private_link_service_network_policies_enabled = optional(bool, true)
     }))
+
     tags = optional(map(string), {})
   }))
 
   validation {
     condition = alltrue([
-      for key, vnet in var.vnets : length(vnet.address_space) > 0 && alltrue([for cidr in vnet.address_space : can(cidrhost(cidr, 0))]) && length(vnet.subnets) > 0
+      for key, vnet in var.vnets :
+      length(vnet.address_space) > 0 &&
+      alltrue([
+        for cidr in vnet.address_space :
+        can(cidrhost(cidr, 0))
+      ]) &&
+      length(vnet.subnets) > 0
     ])
+
     error_message = "Each VNet must define at least one valid private CIDR and at least one subnet."
+  }
+
+  validation {
+    condition = alltrue([
+      for vnet_key, vnet in var.vnets :
+      alltrue([
+        for subnet_key, subnet in vnet.subnets :
+        length(trimspace(subnet.name)) > 0 &&
+        length(subnet.address_prefixes) > 0 &&
+        alltrue([
+          for cidr in subnet.address_prefixes :
+          can(cidrhost(cidr, 0))
+        ])
+      ])
+    ])
+
+    error_message = "Each subnet must define a non-empty name and at least one valid CIDR address prefix."
+  }
+
+  validation {
+    condition = alltrue([
+      for vnet_key, vnet in var.vnets :
+      alltrue([
+        for subnet_key, subnet in vnet.subnets :
+        contains(
+          [
+            "Disabled",
+            "Enabled",
+            "NetworkSecurityGroupEnabled",
+            "RouteTableEnabled"
+          ],
+          subnet.private_endpoint_network_policies
+        )
+      ])
+    ])
+
+    error_message = "private_endpoint_network_policies must be Disabled, Enabled, NetworkSecurityGroupEnabled, or RouteTableEnabled."
   }
 }
 
