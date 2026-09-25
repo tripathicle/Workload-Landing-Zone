@@ -501,6 +501,7 @@ module "sql" {
   tags          = var.tags
 }
 
+# postgresql module
 module "postgresql" {
   source = "../../modules/postgresql"
 
