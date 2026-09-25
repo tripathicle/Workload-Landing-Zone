@@ -243,23 +243,28 @@ module "internal_load_balancer" {
       frontend_ip_configuration = {
         name = lb.frontend_ip_configuration.name
 
+        # IMPORTANT:
+        # ILB private frontend IP lives in the backend subnet.
+        # Frontend VMs access this private IP over the spoke VNet.
         subnet_id = module.network.subnets[
           "${lb.vnet_key}-${lb.subnet_key}"
         ].id
 
+        # Required by azurerm_lb_backend_address_pool_address
+        # because backend IPs are being registered as IP addresses.
         vnet_id = module.network.vnets[
           lb.vnet_key
         ].id
 
-        private_ip_address = (
-          lb.frontend_ip_configuration.private_ip_address
-        )
+        private_ip_address = lb.frontend_ip_configuration.private_ip_address
       }
 
       backend_address_pool = {
         name = lb.backend_address_pool.name
 
-        # Uses the existing local defined at the top of this file.
+        # These are the backend VM private IPs:
+        # 10.20.2.4
+        # 10.20.2.5
         ip_addresses = local.backend_vm_private_ips
       }
 

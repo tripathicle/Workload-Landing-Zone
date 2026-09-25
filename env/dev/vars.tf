@@ -148,10 +148,10 @@ variable "vnets" {
     address_space       = list(string)
 
     subnets = map(object({
-      name                                = string
-      address_prefixes                    = list(string)
-      service_endpoints                   = optional(list(string), [])
-      private_endpoint_network_policies   = optional(string, "Disabled")
+      name                                          = string
+      address_prefixes                              = list(string)
+      service_endpoints                             = optional(list(string), [])
+      private_endpoint_network_policies             = optional(string, "Disabled")
       private_link_service_network_policies_enabled = optional(bool, true)
     }))
 
@@ -247,6 +247,8 @@ variable "load_balancers" {
     location            = string
     sku                 = string
 
+    # The ILB is reached from the frontend subnet,
+    # but its private frontend IP is hosted in the backend subnet.
     vnet_key   = string
     subnet_key = string
 

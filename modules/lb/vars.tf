@@ -15,7 +15,7 @@ variable "load_balancers" {
     })
 
     backend_address_pool = object({
-      name        = string
+      name         = string
       ip_addresses = list(string)
     })
 
@@ -80,7 +80,6 @@ variable "load_balancers" {
 
 variable "tags" {
   description = "Common tags applied to all Load Balancers."
-
-  type    = map(string)
-  default = {}
+  type        = map(string)
+  default     = {}
 }
