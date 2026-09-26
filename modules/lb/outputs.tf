@@ -1,3 +1,7 @@
+# ============================================================
+# LOAD BALANCER OUTPUTS
+# ============================================================
+
 output "load_balancers" {
   description = "Created Load Balancers."
 
@@ -8,6 +12,10 @@ output "load_balancers" {
     }
   }
 }
+
+# ============================================================
+# FRONTEND IP CONFIGURATIONS
+# ============================================================
 
 output "frontend_ip_configurations" {
   description = "Load Balancer frontend IP configuration details."
@@ -27,6 +35,10 @@ output "frontend_ip_configurations" {
   }
 }
 
+# ============================================================
+# BACKEND ADDRESS POOLS
+# ============================================================
+
 output "backend_address_pools" {
   description = "Load Balancer backend address pools."
 
@@ -38,6 +50,10 @@ output "backend_address_pools" {
   }
 }
 
+# ============================================================
+# HEALTH PROBES
+# ============================================================
+
 output "health_probes" {
   description = "Load Balancer health probes."
 
@@ -48,6 +64,10 @@ output "health_probes" {
     }
   }
 }
+
+# ============================================================
+# LOAD BALANCER RULES
+# ============================================================
 
 output "rules" {
   description = "Load Balancer rules."
