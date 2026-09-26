@@ -1,5 +1,5 @@
 # ============================================================
-# APPLICATION GATEWAY CONFIGURATION
+# APPLICATION GATEWAY VARIABLES
 # ============================================================
 
 variable "application_gateways" {
@@ -74,61 +74,72 @@ variable "application_gateways" {
     })
 
     # --------------------------------------------------------
-    # BACKEND ADDRESS POOL
+    # BACKEND ADDRESS POOLS
     # --------------------------------------------------------
 
-    backend_address_pool = object({
-      name         = string
+    backend_address_pools = map(object({
       ip_addresses = optional(list(string), [])
-    })
+    }))
 
     # --------------------------------------------------------
-    # HEALTH PROBE
+    # HEALTH PROBES
     # --------------------------------------------------------
 
-    health_probe = object({
+    health_probes = map(object({
       name                = string
-      protocol            = optional(string, "Http")
+      protocol            = string
       port                = number
-      path                = optional(string, "/")
-      interval            = optional(number, 30)
-      timeout             = optional(number, 30)
-      unhealthy_threshold = optional(number, 3)
-    })
+      path                = string
+      interval            = number
+      timeout             = number
+      unhealthy_threshold = number
+    }))
 
     # --------------------------------------------------------
     # BACKEND HTTP SETTINGS
     # --------------------------------------------------------
 
-    backend_http_settings = object({
+    backend_http_settings = map(object({
       name                  = string
       cookie_based_affinity = string
       port                  = number
       protocol              = string
       request_timeout       = number
-    })
+      probe_name            = string
+    }))
 
     # --------------------------------------------------------
-    # REQUEST ROUTING RULE
+    # REQUEST ROUTING
     # --------------------------------------------------------
 
     request_routing_rule = object({
-      name                       = string
-      rule_type                  = string
-      http_listener_name         = string
-      backend_address_pool_name  = string
-      backend_http_settings_name = string
+      name               = string
+      priority           = number
+      rule_type          = string
+      http_listener_name = string
+
+      url_path_map_name = string
+
+      default_backend_address_pool_name  = string
+      default_backend_http_settings_name = string
+
+      path_rules = list(object({
+        name                       = string
+        paths                      = list(string)
+        backend_address_pool_name  = string
+        backend_http_settings_name = string
+      }))
     })
 
     # --------------------------------------------------------
-    # RESOURCE TAGS
+    # TAGS
     # --------------------------------------------------------
 
     tags = optional(map(string), {})
   }))
 
   # ==========================================================
-  # BASIC RESOURCE VALIDATION
+  # RESOURCE VALIDATION
   # ==========================================================
 
   validation {
@@ -212,34 +223,54 @@ variable "application_gateways" {
 
   validation {
     condition = alltrue([
-      for key, gateway in var.application_gateways :
-      gateway.health_probe.port >= 1 &&
-      gateway.health_probe.port <= 65535 &&
-      gateway.health_probe.interval >= 1 &&
-      gateway.health_probe.timeout >= 1 &&
-      gateway.health_probe.unhealthy_threshold >= 1
+      for gateway_key, gateway in var.application_gateways :
+      alltrue([
+        for probe_key, probe in gateway.health_probes :
+        probe.port >= 1 &&
+        probe.port <= 65535 &&
+        probe.interval >= 1 &&
+        probe.timeout >= 1 &&
+        probe.unhealthy_threshold >= 1
+      ])
     ])
 
-    error_message = "Application Gateway health probe must contain valid port, interval, timeout, and unhealthy threshold values."
+    error_message = "Application Gateway health probes must contain valid port, interval, timeout, and unhealthy threshold values."
   }
 
   # ==========================================================
-  # BACKEND SETTINGS VALIDATION
+  # BACKEND HTTP SETTINGS VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for gateway_key, gateway in var.application_gateways :
+      alltrue([
+        for settings_key, settings in gateway.backend_http_settings :
+        settings.port >= 1 &&
+        settings.port <= 65535 &&
+        settings.request_timeout >= 1 &&
+        settings.request_timeout <= 86400
+      ])
+    ])
+
+    error_message = "Application Gateway backend HTTP settings must contain valid port and request timeout values."
+  }
+
+  # ==========================================================
+  # ROUTING RULE VALIDATION
   # ==========================================================
 
   validation {
     condition = alltrue([
       for key, gateway in var.application_gateways :
-      gateway.backend_http_settings.port >= 1 &&
-      gateway.backend_http_settings.port <= 65535 &&
-      gateway.backend_http_settings.request_timeout >= 1 &&
-      gateway.backend_http_settings.request_timeout <= 86400
+      gateway.request_routing_rule.priority >= 1 &&
+      gateway.request_routing_rule.priority <= 20000 &&
+      gateway.request_routing_rule.rule_type == "PathBasedRouting"
     ])
 
-    error_message = "Application Gateway backend settings must contain valid port and request timeout values."
+    error_message = "Application Gateway routing rule must use PathBasedRouting and priority must be between 1 and 20000."
   }
 }
-
 
 # ============================================================
 # DEFAULT TAGS
@@ -248,8 +279,7 @@ variable "application_gateways" {
 variable "tags" {
   description = "Default tags applied to Application Gateway resources."
 
-  type = map(string)
-
+  type    = map(string)
   default = {}
 
   validation {
