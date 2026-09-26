@@ -1,18 +1,14 @@
-# Hub-Spoke Landing Zone — Monolith Architecture
+# Hub-Spoke Landing Zone
 
-**Monolithic 3-Tier Architecture — Technical Documentation**
+**A Terraform-based Azure Hub-Spoke Workload Landing Zone for a monolithic 3-tier application, deployed as a development foundation with private workload compute, WAF-protected ingress, private database connectivity, centralized monitoring, and Bastion-based administration.**
 
-### Author
-
-**Shubham Tripathi** — Cloud & DevOps Engineer · Azure Landing Zone Architect
-
-- GitHub: [github.com/tripathicle](https://github.com/tripathicle/)
-- LinkedIn: [linkedin.com/in/tstripathi](https://www.linkedin.com/in/tstripathi/)
+**Author:** Shubham Tripathi — Cloud & DevOps Engineer · Azure Landing Zone Architect
+[GitHub: github.com/tripathicle](https://github.com/tripathicle/) · [LinkedIn: linkedin.com/in/tstripathi](https://www.linkedin.com/in/tstripathi/)
 
 | | |
 |---|---|
 | **Environment** | Development (dev) |
-| **Azure Region** | Japan East (japaneast) |
+| **Azure Region** | Japan East (`japaneast`) |
 | **IaC Tool** | Terraform |
 | **Pattern** | Hub-Spoke Landing Zone |
 | **Owner** | Shubham Tripathi |
@@ -27,19 +23,20 @@
 4. [End-to-End Traffic Flow](#4-end-to-end-traffic-flow)
 5. [Security Posture](#5-security-posture)
 6. [Terraform Architecture](#6-terraform-architecture)
-7. [Deploy Anywhere — Reusable Template](#7-deploy-anywhere--reusable-template)
-8. [Resource Inventory](#8-resource-inventory)
-9. [Future High-Availability Evolution](#9-future-high-availability-evolution)
-10. [Roadmap & Recommendations](#10-roadmap--recommendations)
+7. [CI/CD & Security Validation Pipeline](#7-cicd--security-validation-pipeline)
+8. [Deploy Anywhere — Reusable Template](#8-deploy-anywhere--reusable-template)
+9. [Resource Inventory](#9-resource-inventory)
+10. [Future High-Availability Reference Designs](#10-future-high-availability-reference-designs)
+11. [Roadmap & Current Status](#11-roadmap--current-status)
 
 ---
 
 ## 1. Executive Summary
 
-This document describes the complete architecture for a **Todo Monolithic 3-Tier Application** deployed on Azure using a **Hub-Spoke Landing Zone** pattern. The infrastructure is provisioned entirely through **Terraform** with a modular, reusable design following Microsoft Cloud Adoption Framework (CAF) best practices.
+This document describes the architecture for a **Todo Monolithic 3-Tier Application** deployed on Azure using a **Hub-Spoke Landing Zone** pattern. The infrastructure is provisioned entirely through **Terraform** with a modular, reusable design aligned to Microsoft Cloud Adoption Framework (CAF) guidance.
 
-> ♻️ **Reusable for ANY 3-Tier Architecture**
-> This codebase is designed as a **generic landing zone template**. Any team can clone this repository and deploy their own 3-tier workload (todo app, e-commerce, blogging platform, internal portal, etc.) by simply updating the `terraform.tfvars` file — no changes to the modules required.
+> ♻️ **Reusable for Any 3-Tier Architecture**
+> This codebase is designed as a **generic landing zone template**. Any team can clone this repository and deploy their own 3-tier workload (todo app, e-commerce, blogging platform, internal portal, etc.) by updating the `terraform.tfvars` file — no changes to the modules are required.
 
 ### At a Glance
 
@@ -49,27 +46,27 @@ This document describes the complete architecture for a **Todo Monolithic 3-Tier
 | VNets (Hub + Spoke) | 2 |
 | Subnets | 6 |
 | Virtual Machines | 4 |
-| Resources | 250+ |
+| Terraform Modules | 16 |
 | Private Backend | 100% |
 
 ### Key Highlights
 
-**🌐 Network Isolation** — `rg-platform (hub) + rg-app (spoke)`
+**🌐 Network Isolation** — `rg-platform + rg-app`
 - Hub VNet: 10.10.0.0/16
 - Spoke VNet: 10.20.0.0/16
 - Bi-directional VNet peering
-- Zero public exposure for VMs
+- Zero public IP on workload VMs
 
 **🔒 Secure Ingress** — `rg-app-hubandspokewl-dev`
 - App Gateway WAF_v2
 - OWASP 3.2 Prevention mode
-- Only port 80 exposed publicly
-- Backend pool auto-populated
+- HTTP :80 in dev (HTTPS pending)
+- Backend pool auto-populated from NIC
 
 **🗄️ Private Data Tier** — `rg-data-hubandspokewl-dev`
 - Azure SQL via Private Link
-- PostgreSQL via Private Link
-- Public access disabled
+- PostgreSQL Flexible via Private Link
+- Public network access disabled
 - Private DNS resolution
 
 **🛡️ Shared Platform** — `rg-platform-hubandspokewl-dev`
@@ -80,21 +77,21 @@ This document describes the complete architecture for a **Todo Monolithic 3-Tier
 
 ### Business Value
 
-| Objective | How Achieved | Impact |
+| Objective | How Achieved | Outcome |
 |---|---|---|
-| **Security** | WAF, NSGs, Private Link, no public VM IPs | Reduced attack surface by 90% |
-| **Compliance** | Hub-spoke isolation, centralized logging | Audit-ready |
-| **Scalability** | Modular Terraform, reusable across envs | Dev → Prod in minutes |
-| **Operations** | Bastion, Log Analytics, App Insights | Zero-trust admin access |
-| **Cost** | RG separation, LRS storage, Basic SQL | ~40% cheaper than flat design |
+| **Security** | WAF, NSG segmentation, Private Link, no public VM IPs | ✅ Eliminated public exposure of workload VMs and databases |
+| **Governance** | Hub-spoke isolation, RG separation, centralized logging | ✅ Clear ownership and lifecycle boundaries |
+| **Scalability** | Modular Terraform, data-driven configuration | ✅ Same modules reusable across environments |
+| **Operations** | Bastion, Log Analytics, App Insights | ✅ Private administrative access without VM public IPs |
+| **Cost Control** | RG separation, right-sized dev SKUs | ✅ Independent lifecycle and cost attribution |
 
 ---
 
 ## 2. Architecture Overview
 
 ### High-Level Topology
-
 ```mermaid
+
 flowchart TB
 
     %% ══════════════════════════════════════════════════════════════
@@ -102,20 +99,7 @@ flowchart TB
     %% ══════════════════════════════════════════════════════════════
     Internet(("☁️ INTERNET<br/>HTTP :80"))
 
-    %% ══════════════════════════════════════════════════════════════
-    %% HUB VNet — Shared Services
-    %% ══════════════════════════════════════════════════════════════
-    subgraph HUB["🏢 HUB VNet · 10.10.0.0/16"]
-        direction TB
-
-        subgraph BASTION_SUB["🛡️ AzureBastionSubnet · 10.10.0.0/24"]
-            BASTION["<b>Azure Bastion</b><br/>bas-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>🌐 Public IP: pip-bastion<br/>🔐 Zero-trust admin access via Portal"]
-        end
-
-        subgraph ADMIN_SUB["📦 admin-subnet · 10.10.2.0/24"]
-            ADMIN["<i>Reserved for future use</i>"]
-        end
-    end
+    PIP_AGW["<b>Public IP · Standard · Static</b><br/>pip-agw-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>Associated with AGW frontend"]
 
     %% ══════════════════════════════════════════════════════════════
     %% SPOKE VNet — Application Workload
@@ -124,85 +108,108 @@ flowchart TB
         direction TB
 
         subgraph AGW_SUB["🛡️ appgw-subnet · 10.20.0.0/24"]
-            AGW["<b>Application Gateway WAF_v2</b><br/>agw-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>🌐 Public IP: pip-agw-hubandspokewl-dev<br/>🛡️ OWASP 3.2 · Prevention Mode<br/>🔊 Listener :80 → Backend :80<br/>💓 Health Probe: /health"]
+            AGW["<b>Application Gateway WAF_v2</b><br/>━━━━━━━━━━━━━━<br/>🛡️ OWASP 3.2 · Prevention Mode<br/>🔊 Listener :80 (HTTP · dev only)<br/>🔀 Path routing:<br/>    /       → Frontend<br/>    /api/*  → Internal LB<br/>💓 Health Probe: /health"]
         end
 
         subgraph FE_SUB["🖥️ frontend-subnet · 10.20.1.0/24 · NSG"]
             direction LR
-            FE1["<b>vm-fe-01</b><br/>━━━━━━━<br/>📡 10.20.1.4<br/>🌐 Nginx :80 · UI"]
-            FE2["<b>vm-fe-02</b><br/>━━━━━━━<br/>📡 10.20.1.5<br/>🌐 Nginx :80 · UI"]
+            FE1["<b>vm-fe-01</b><br/>━━━━━━━<br/>📡 10.20.1.4<br/>🌐 :80"]
+            FE2["<b>vm-fe-02</b><br/>━━━━━━━<br/>📡 10.20.1.5<br/>🌐 :80"]
         end
+
+        ILB["<b>⚖️ Internal Load Balancer</b><br/>━━━━━━━━━━━━━━<br/>📡 10.20.2.10<br/>🔊 :8080 (private)"]
 
         subgraph BE_SUB["⚙️ backend-subnet · 10.20.2.0/24 · NSG"]
-            direction TB
-            ILB["<b>⚖️ Internal Load Balancer</b><br/>ilb-backend-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>📡 10.20.2.10<br/>🔊 :8080 → :8080<br/>💓 Health Probe: /health"]
             direction LR
-            BE1["<b>vm-be-01</b><br/>━━━━━━━<br/>📡 10.20.2.4<br/>⚙️ Nginx :8080 · API"]
-            BE2["<b>vm-be-02</b><br/>━━━━━━━<br/>📡 10.20.2.5<br/>⚙️ Nginx :8080 · API"]
+            BE1["<b>vm-be-01</b><br/>━━━━━━━<br/>📡 10.20.2.4<br/>⚙️ :8080 · API"]
+            BE2["<b>vm-be-02</b><br/>━━━━━━━<br/>📡 10.20.2.5<br/>⚙️ :8080 · API"]
         end
 
-        subgraph PE_SUB["🔌 private-endpoint-subnet · 10.20.3.0/24 · NSG"]
+        subgraph PE_SUB["🔌 private-endpoint-subnet · 10.20.3.0/24 · NSG<br/>private_endpoint_network_policies = NetworkSecurityGroupEnabled"]
             direction LR
-            PE_SQL["<b>Private Endpoint</b><br/>pe-sql<br/>━━━━━━━━━━━━━━<br/>🎯 sqlServer<br/>🌐 privatelink.database.windows.net"]
-            PE_PG["<b>Private Endpoint</b><br/>pe-postgresql<br/>━━━━━━━━━━━━━━<br/>🎯 postgresqlServer<br/>🌐 privatelink.postgres.database.azure.com"]
+            PE_SQL["<b>PE · pe-sql</b><br/>━━━━━━━━━━━━━━<br/>🎯 sqlServer"]
+            PE_PG["<b>PE · pe-postgresql</b><br/>━━━━━━━━━━━━━━<br/>🎯 postgresqlServer"]
         end
     end
 
     %% ══════════════════════════════════════════════════════════════
     %% DATA TIER
     %% ══════════════════════════════════════════════════════════════
-    SQL[("<b>🗄️ Azure SQL Server</b><br/>sql-monolith-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>💾 sqldb-monolith (Basic, 2 GB)<br/>🔒 Public Access: DISABLED")]
+    SQL[("<b>🗄️ Azure SQL Server</b><br/>sql-monolith-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>💾 sqldb-monolith (Basic)<br/>🔒 Public Access: DISABLED")]
 
     PG[("<b>🐘 PostgreSQL Flexible Server</b><br/>psql-monolith-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>💾 appdb (B_Standard_B1ms)<br/>🔒 Public Access: DISABLED")]
+
+    %% ══════════════════════════════════════════════════════════════
+    %% HUB VNet — Shared Services
+    %% ══════════════════════════════════════════════════════════════
+    subgraph HUB["🏢 HUB VNet · 10.10.0.0/16"]
+        direction TB
+
+        subgraph BASTION_SUB["🛡️ AzureBastionSubnet · 10.10.0.0/24"]
+            BASTION["<b>Azure Bastion</b><br/>bas-hubandspokewl-dev<br/>━━━━━━━━━━━━━━<br/>🌐 Public IP: pip-bastion<br/>🔐 Controlled private administrative access"]
+        end
+
+        subgraph ADMIN_SUB["📦 admin-subnet · 10.10.2.0/24"]
+            ADMIN["<i>Reserved for future use</i>"]
+        end
+    end
 
     %% ══════════════════════════════════════════════════════════════
     %% TRAFFIC FLOWS
     %% ══════════════════════════════════════════════════════════════
 
-    Internet ==>|"🌐 HTTP :80"| AGW
-    AGW ==>|"🛡️ :80"| FE1
-    AGW ==>|"🛡️ :80"| FE2
-    FE1 ==>|"🧠 :8080"| ILB
-    FE2 ==>|"🧠 :8080"| ILB
-    ILB ==>|"🧠 :8080"| BE1
-    ILB ==>|"🧠 :8080"| BE2
+    Internet ==>|"🌐 HTTP :80"| PIP_AGW
+    PIP_AGW ==>|"frontend IP config"| AGW
+
+    AGW ==>|"🛡️ / :80"| FE1
+    AGW ==>|"🛡️ / :80"| FE2
+    AGW ==>|"🛡️ /api/* :8080"| ILB
+
+    FE1 -->|"🧠 :8080"| ILB
+    FE2 -->|"🧠 :8080"| ILB
+
+    ILB ==>|"⚙️ :8080"| BE1
+    ILB ==>|"⚙️ :8080"| BE2
+
     BE1 ==>|"💾 :1433"| PE_SQL
     BE2 ==>|"💾 :1433"| PE_SQL
+    PE_SQL ==>|"🔒 Private Link"| SQL
+
     BE1 ==>|"🐘 :5432"| PE_PG
     BE2 ==>|"🐘 :5432"| PE_PG
-    PE_SQL ==>|"🔒 Private Link"| SQL
     PE_PG ==>|"🔒 Private Link"| PG
 
     BASTION -.->|"🔑 Admin Access<br/>via VNet Peering"| FE1
     BASTION -.->|"🔑 Admin Access<br/>via VNet Peering"| BE1
 
-    HUB <==>|"🔗 VNet Peering · bi-directional"| SPOKE
+    HUB <==>|"🔗 VNet Peering<br/>bi-directional"| SPOKE
 
     %% ══════════════════════════════════════════════════════════════
     %% STYLING
     %% ══════════════════════════════════════════════════════════════
 
-    classDef internetStyle fill:#bbdefb,stroke:#0d47a1,stroke-width:3px,color:#0d47a1,font-weight:bold
-    classDef hubStyle fill:#d1c4e9,stroke:#4527a0,stroke-width:3px,color:#311b92,font-weight:bold
-    classDef spokeStyle fill:#c8e6c9,stroke:#1b5e20,stroke-width:3px,color:#1b5e20,font-weight:bold
-    classDef dataStyle fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#bf360c,font-weight:bold
-    classDef subnetStyle fill:#fafafa,stroke:#b0bec5,stroke-width:1px,stroke-dasharray: 4 4,color:#37474f
-    classDef computeStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:#01579b
-    classDef securityStyle fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px,color:#b71c1c
-    classDef lbStyle fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#e65100
-    classDef peStyle fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef internetStyle fill:#dbeafe,stroke:#2563eb,stroke-width:3px,color:#1e3a8a,font-weight:bold
+    classDef hubStyle fill:#e9d5ff,stroke:#7c3aed,stroke-width:3px,color:#4c1d95,font-weight:bold
+    classDef spokeStyle fill:#d1fae5,stroke:#059669,stroke-width:3px,color:#064e3b,font-weight:bold
+    classDef dataStyle fill:#fed7aa,stroke:#ea580c,stroke-width:3px,color:#7c2d12,font-weight:bold
+    classDef subnetStyle fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,stroke-dasharray: 4 4,color:#334155
+    classDef computeStyle fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+    classDef securityStyle fill:#fecaca,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef lbStyle fill:#fef3c7,stroke:#d97706,stroke-width:3px,color:#78350f
+    classDef peStyle fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef pipStyle fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
 
     class Internet internetStyle
+    class PIP_AGW pipStyle
     class HUB hubStyle
     class SPOKE spokeStyle
     class SQL,PG dataStyle
-    class BASTION_SUB,ADMIN_SUB,AGW_SUB,FE_SUB,BE_SUB,PE_SUB subnetStyle
+    class AGW_SUB,FE_SUB,BE_SUB,PE_SUB,BASTION_SUB,ADMIN_SUB subnetStyle
     class FE1,FE2,BE1,BE2 computeStyle
     class AGW,BASTION securityStyle
     class ILB lbStyle
     class PE_SQL,PE_PG peStyle
 ```
-
 
 ### Three-Tier Application Model
 
@@ -212,23 +219,31 @@ flowchart TB
 | **Application** | Internal LB + BE VMs (Nginx) | backend-subnet | 8080 | Business logic / API |
 | **Data** | Azure SQL + PostgreSQL via Private Endpoints | private-endpoint-subnet | 1433 / 5432 | Persistent data stores |
 
+### Subnet Layout
+
+| Tier | Subnet | CIDR | Notes |
+|---|---|---|---|
+| Azure Bastion | AzureBastionSubnet | 10.10.0.0/24 | Hub · dedicated |
+| Hub Admin | admin-subnet | 10.10.2.0/24 | Hub · reserved |
+| Application Gateway | appgw-subnet | 10.20.0.0/24 | Spoke · ingress |
+| Frontend | frontend-subnet | 10.20.1.0/24 | Spoke · NSG attached |
+| Backend | backend-subnet | 10.20.2.0/24 | Spoke · NSG attached |
+| Private Endpoints | private-endpoint-subnet | 10.20.3.0/24 | Spoke · NSG attached, `private_endpoint_network_policies = "NetworkSecurityGroupEnabled"` |
+
 > 💡 **Design Principle: Defense in Depth**
-> Every tier has its own subnet + NSG. Traffic must pass through multiple security checkpoints: Public IP → WAF → NSG (frontend) → App VM → NSG (backend) → App VM → NSG (PE) → Private Link → Database.
+> Each tier has its own subnet and NSG. Traffic passes through multiple checkpoints: Public IP → WAF → NSG (frontend) → VM → NSG (backend) → VM → NSG (PE) → Private Link → database.
 
 > 📌 **NSGs Are Not Hops**
-> In the diagram, `[NSG]` is shown next to subnets as a **visual indicator**. Logically, NSGs are **security filters attached to subnets/NICs** — traffic does not "go through" an NSG as a separate network device. They evaluate packets at the subnet boundary and allow/deny based on rules.
+> In diagrams, `[NSG]` is shown next to subnets as a visual indicator. NSGs are **stateful packet filters attached to subnets or NICs** — traffic does not "go through" an NSG as a separate device. Rules are evaluated inline at the subnet boundary.
 
 > 🐘 **PostgreSQL Connectivity — Current State**
-> PostgreSQL Flexible Server currently uses a **Private Endpoint** in `private-endpoint-subnet (10.20.3.0/24)` with DNS zone `privatelink.postgres.database.azure.com`. In a future iteration, this can be migrated to a **delegated subnet** (`postgres-subnet · 10.20.4.0/24`) if lower latency or VNet injection becomes a requirement.
+> PostgreSQL Flexible Server currently uses a **Private Endpoint** in `private-endpoint-subnet (10.20.3.0/24)` with DNS zone `privatelink.postgres.database.azure.com`. Both Private Endpoint and VNet-integrated (delegated subnet) are valid Azure networking models; the choice is a deployment-model decision, not simply a latency optimization. Migrating to VNet integration later would require a deliberate subnet and DNS architecture change.
 
 ---
 
 ## 3. Resource Group Ownership Model
 
 Resources are organized into **3 Resource Groups** based on ownership and lifecycle. This separation enables clean RBAC, independent lifecycle management, and clear cost attribution.
-
-> ✅ **Final Architecture Decision**
-> The Hub VNet and Spoke VNet (along with all subnets and peerings) live in `rg-platform-hubandspokewl-dev`. Application resources stay in `rg-app-hubandspokewl-dev`, and data resources live in `rg-data-hubandspokewl-dev`. This keeps network concerns independent of application lifecycle.
 
 ### 🛡️ Platform — `rg-platform-hubandspokewl-dev`
 - Hub VNet + Subnets
@@ -247,7 +262,7 @@ Resources are organized into **3 Resource Groups** based on ownership and lifecy
 - Backend VMs + NICs
 - Internal Load Balancer
 - NSGs (frontend, backend)
-- Key Vault (app secrets)
+- Key Vault (secret management foundation)
 - Application Insights
 
 **Owner:** App Team
@@ -288,7 +303,7 @@ Resources are organized into **3 Resource Groups** based on ownership and lifecy
 | NSG: private-endpoint | rg-data | Data | Data-bound |
 
 > ✅ **Why This Model?**
-> Network resources live independently of applications. If the todo app is decommissioned, the VNets, peerings, and DNS remain intact for the next workload. This is the enterprise landing zone standard.
+> Network resources live independently of applications. If the workload is decommissioned, the VNets, peerings, and DNS remain intact for the next workload. This ownership model provides clear RBAC, lifecycle, and cost boundaries and is commonly used as an enterprise landing-zone pattern — although real organizations may design their resource-group boundaries differently based on their own governance and operational requirements.
 
 ---
 
@@ -296,38 +311,48 @@ Resources are organized into **3 Resource Groups** based on ownership and lifecy
 
 ### Flow A — User Request (North-South Ingress)
 
-1. **User → Public IP** — User opens `http://<agw-public-ip>/` in browser. Traffic hits `pip-agw-hubandspokewl-dev` on port 80.
-2. **WAF Inspection** — Application Gateway WAF_v2 inspects request against OWASP 3.2 rules (Prevention mode). Malicious requests blocked with 403.
-3. **App Gateway → Frontend Pool** — Clean request routed to `frontend-pool` containing `10.20.1.4` and `10.20.1.5`. Health probe `/health` ensures only healthy VMs receive traffic.
-   - NSG: `allow-appgateway-http` (prio 100) permits :80 from 10.20.0.0/24
-4. **Frontend VM Serves UI** — Nginx on `vm-fe-01` or `vm-fe-02` serves the Todo UI on port 80. Both VMs are **parallel** — App Gateway distributes requests between them independently.
-5. **Frontend → Backend ILB** — UI's JavaScript calls API at `10.20.2.10:8080` (Internal Load Balancer).
-   - NSG: `allow-frontend-backend` (prio 100) permits :8080 from 10.20.1.0/24
-6. **ILB → Backend Pool** — ILB distributes to `10.20.2.4` or `10.20.2.5` using health probe `/health:8080`.
-7. **Backend VM Processes Logic** — Nginx on backend VM runs the monolith API on port 8080.
-8. **Backend → Private Endpoints** — App connects to `sql-monolith-hubandspokewl-dev.database.windows.net:1433` and `psql-monolith-hubandspokewl-dev.postgres.database.azure.com:5432`. DNS resolves to Private Endpoint IPs in `10.20.3.0/24`.
-   - NSG Outbound: `allow-sql` → :1433, `allow-postgresql` → :5432
-   - NSG Inbound: `allow-backend-sql` + `allow-backend-postgresql` from 10.20.2.0/24
-9. **Private Link → Databases** — Traffic traverses Azure Private Link to both SQL and PostgreSQL — no public internet.
-10. **Response Returns** — Database → PE → Backend VM → ILB → Frontend VM → AGW → User. **Full round trip complete.**
+1. **User → Public IP** — User opens `http://<agw-public-ip>/` in browser. Traffic hits `pip-agw-hubandspokewl-dev` on port 80. The Public IP is associated with the Application Gateway's **frontend IP configuration** — it is not a standalone resource inside the subnet.
+2. **WAF Inspection** — Application Gateway WAF_v2 inspects the request against OWASP 3.2 rules (Prevention mode). Malicious requests are blocked with HTTP 403.
+3. **Path-Based Routing** — Clean requests are routed based on URL path:
+   - `/` → Frontend VM pool (`10.20.1.4`, `10.20.1.5`) on port 80
+   - `/api/*` → Internal Load Balancer (`10.20.2.10`) on port 8080
+   - NSG: `allow-appgateway-http` (prio 100) permits :80 from 10.20.0.0/24 to frontend
+4. **Frontend VM Serves UI** — Nginx on `vm-fe-01` or `vm-fe-02` serves the UI on port 80. **Both frontend VMs are parallel** — App Gateway distributes requests between them independently.
+5. **Frontend Application Calls Backend API** — The frontend application (or App Gateway directly, via `/api/*`) sends API requests to the Internal Load Balancer at `10.20.2.10:8080`. The ILB is private and never exposed to the internet.
+   - NSG (frontend path): `allow-frontend-backend` (prio 100) permits :8080 from 10.20.1.0/24
+   - NSG (App Gateway path): `allow-appgateway-backend` (prio 105) permits :8080 from 10.20.0.0/24
+6. **ILB → Backend Pool** — ILB distributes to `10.20.2.4` or `10.20.2.5` using health probe `/health:8080`. Azure Load Balancer health probe traffic is permitted on port 8080 (priority 110).
+7. **Backend VM Processes Logic** — Nginx on the backend VM runs the monolithic API on port 8080.
+8. **Backend → Private Endpoints** — App connects to the database FQDNs:
+   - `sql-monolith-hubandspokewl-dev.database.windows.net:1433`
+   - `psql-monolith-hubandspokewl-dev.postgres.database.azure.com:5432`
+
+   Applications resolve these FQDNs via Private DNS — never hardcode the PE IP.
+   - NSG Outbound: `allow-sql` (prio 120) → :1433, `allow-postgresql` (prio 130) → :5432
+   - NSG Inbound (PE): `allow-backend-sql` (prio 100) and `allow-backend-postgresql` (prio 110) from 10.20.2.0/24
+9. **Private Link → Databases** — Traffic traverses Azure Private Link to Azure SQL and PostgreSQL — no public internet exposure.
+10. **Response Returns** — Database → PE → Backend VM → ILB → (frontend or App Gateway) → User. Full round trip complete.
 
 ### Flow B — DNS Resolution (Private Link)
 
-| Step | Query | Resolution |
+| Step | Action | Resolution |
 |---|---|---|
-| 1 | Backend VM queries `sql-monolith...database.windows.net` | Azure DNS |
-| 2 | Azure DNS sees CNAME to `sql-monolith...privatelink.database.windows.net` | Private DNS Zone (linked to spoke VNet) |
-| 3 | Private DNS Zone returns **10.20.3.x** (PE private IP) | Backend VM receives private IP |
-| 4 | Backend connects to PE private IP | Traffic flows over Private Link ✅ |
-| 5 | Same pattern for PostgreSQL: `privatelink.postgres.database.azure.com` | Returns PE private IP |
+| 1 | Application uses the database FQDN (not a hardcoded PE IP) | Client-side |
+| 2 | Azure DNS returns CNAME to `<name>.privatelink.<service>.…` | Azure DNS |
+| 3 | Private DNS zone (linked to spoke VNet) resolves to the Private Endpoint IP | Private DNS |
+| 4 | Application opens a TCP connection to the Private Endpoint IP | Private networking |
+| 5 | Traffic flows over Azure Private Link to the database | Azure backbone |
+
+> 💡 **Always Use FQDN**
+> Applications should resolve the database by FQDN, not by hardcoded PE IP. This keeps DNS-based routing intact when additional workloads (e.g., Agricart, SMS, Axion) are added later.
 
 ### Flow C — Admin Access (Management)
 
-1. **Admin → Azure Portal** — Admin logs into Azure Portal and navigates to Bastion.
-2. **Portal → Bastion (HTTPS 443)** — Bastion authenticated, session established in browser.
-3. **Bastion → Target VM (SSH 22)** — Bastion in hub (10.10.0.0/24) reaches spoke VM via VNet peering. SSH session starts in browser.
-   - Prerequisite: NSG rule `allow-ssh-from-bastion` must permit :22 from 10.10.0.0/24
-4. **Zero Public IP on VMs** — VMs have no public IPs. All admin access is via Bastion — zero-trust model.
+1. **Admin → Azure Portal** — Admin logs into the Azure Portal and navigates to Azure Bastion.
+2. **Portal → Bastion (HTTPS 443)** — Bastion authenticates the admin, and an in-browser session is established.
+3. **Bastion → Target VM** — Bastion in the hub (10.10.0.0/24) reaches the target spoke VM via VNet peering. SSH session opens in the browser.
+   - ⚠️ **Status:** Bastion-to-VM SSH NSG rule is **pending verification/addition**. The frontend and backend NSGs currently do not have an explicit SSH :22 allow rule from the Bastion subnet. If an NSG is attached to `AzureBastionSubnet` in the future, Azure requires a specific set of platform and data-plane rules (including 443, GatewayManager 443, 8080/5701, AzureLoadBalancer 443, outbound 22/3389, AzureCloud 443, and Internet 80).
+4. **Zero Public IP on VMs** — Workload VMs have no public IPs. All administrative access is via Bastion — private administrative access without exposing VM public IPs.
 
 ### Flow D — Monitoring & Telemetry
 
@@ -337,104 +362,144 @@ Resources are organized into **3 Resource Groups** based on ownership and lifecy
 | App Gateway | Log Analytics | Access logs, WAF logs |
 | Application | App Insights `appi-hubandspokewl-dev` | Custom telemetry, traces |
 | App Insights | Log Analytics (via workspace_key) | Centralized queries |
-| NSGs | Log Analytics (via flow logs) | Network traffic analysis |
+| NSGs | Log Analytics (flow logs — planned) | Network traffic analysis |
 
-### Flow E — Terraform Deployment Order
+### Flow E — Terraform Dependency Flow
 
-```
-terraform apply
-      │
-      ▼
-┌─────────────────────────┐
-│ module.resource_groups  │  ← 3 RGs created
-└───────────┬─────────────┘
-            │
-            ▼
-┌─────────────────────────┐
-│ module.network          │  ← VNets + Subnets + Peerings
-└───────────┬─────────────┘
-            │
-     ┌──────┼───────────┬──────────────┐
-     ▼      ▼           ▼              ▼
-┌────────┐ ┌────────┐ ┌────────┐ ┌─────────────┐
-│  nsg   │ │  nic   │ │public_ │ │    sa       │
-│        │ │        │ │  ip    │ │             │
-└───┬────┘ └───┬────┘ └───┬────┘ └─────────────┘
-    │          │          │
-    │          ▼          │
-    │    ┌──────────┐     │
-    │    │   vm     │     │
-    │    └──────────┘     │
-    │                     │
-    ▼                     │
-┌──────────────────┐      │
-│ subnet_nsg_      │      │
-│ association      │      │
-└──────────────────┘      │
-                          │
-     ┌────────────────────┼──────────────┐
-     ▼                    ▼              ▼
-┌──────────┐      ┌─────────────┐  ┌──────────┐
-│ internal_│      │  gateway    │  │ bastion  │
-│ lb       │      │ (AppGW)     │  │          │
-└──────────┘      └─────────────┘  └──────────┘
-     │
-     ▼
-┌──────────┐  ┌──────────────┐  ┌────────────┐
-│   sql    │─▶│private_access│  │ monitoring │
-│          │  │  (DNS + PE)  │  │            │
-└──────────┘  └──────────────┘  └────────────┘
-     │
-     ▼
-┌──────────┐  ┌───────────────┐
-│postgresql│─▶│  key_vault    │
-└──────────┘  └───────────────┘
+> 💡 **Diagram Is Not Strict Execution Order**
+> Terraform does not execute resources strictly top-to-bottom. It builds a dependency graph and creates resources based on their references. The diagram below shows the conceptual dependency flow between modules.
+
+```mermaid
+flowchart TB
+    APPLY(["terraform apply"])
+
+    RG["module.resource_groups<br/>━━━━━━━━━━━━━━<br/>3 RGs created"]
+    NET["module.network<br/>━━━━━━━━━━━━━━<br/>VNets + Subnets + Peerings"]
+
+    NSG["module.nsg"]
+    NIC["module.nic"]
+    PIP["module.public_ip"]
+    SA["module.sa"]
+
+    VM["module.vm"]
+    NSG_ASSOC["module.subnet_nsg_association"]
+
+    ILB["module.internal_load_balancer"]
+    AGW["module.gateway<br/>(App Gateway)"]
+    BASTION["module.bastion"]
+
+    SQL["module.sql"]
+    PRIV["module.private_access<br/>(DNS + Private Endpoints)"]
+    MON["module.monitoring"]
+
+    PG["module.postgresql"]
+    KV["module.key_vault"]
+
+    APPLY ==> RG
+    RG ==> NET
+
+    NET ==> NSG
+    NET ==> NIC
+    NET ==> PIP
+    NET ==> SA
+
+    NIC ==> VM
+    NSG ==> NSG_ASSOC
+
+    NET ==> ILB
+    NET ==> AGW
+    NET ==> BASTION
+
+    SQL ==> PRIV
+    SQL ==> MON
+
+    PG ==> KV
+
+    %% Styling
+    classDef applyStyle fill:#1e3a8a,stroke:#1e40af,stroke-width:3px,color:#ffffff,font-weight:bold
+    classDef foundationStyle fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef networkStyle fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef computeStyle fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+    classDef lbStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef dataStyle fill:#fed7aa,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef secStyle fill:#e9d5ff,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+
+    class APPLY applyStyle
+    class RG foundationStyle
+    class NET networkStyle
+    class NSG,NIC,PIP,SA,NSG_ASSOC computeStyle
+    class VM computeStyle
+    class ILB,AGW,BASTION lbStyle
+    class SQL,PG dataStyle
+    class PRIV,KV,MON secStyle
 ```
 
 ---
 
 ## 5. Security Posture
 
-### Defense-in-Depth Layers
+### Defense-in-Depth — Implemented Controls
 
-| Layer | Control | Implementation |
-|---|---|---|
-| L1 — Edge | Web Application Firewall | App Gateway WAF_v2 · OWASP 3.2 · Prevention mode |
-| L2 — Network | NSG Rules | Least-privilege rules per subnet (frontend, backend, PE) |
-| L3 — Compute | No Public IPs on VMs | All access via Bastion or internal LB |
-| L4 — Data | Private Link | SQL + PostgreSQL with `public_network_access_enabled = false` |
-| L5 — Identity | Managed Identity + RBAC | VMs have SystemAssigned identity · Key Vault RBAC |
-| L6 — Secrets | Key Vault | Purge protection · Soft delete 90 days · Public access OFF |
-| L7 — Monitoring | Central Logging | Log Analytics + App Insights |
+| Layer | Current Implementation |
+|---|---|
+| Edge | App Gateway WAF_v2 · OWASP 3.2 · Prevention mode |
+| Network | Subnet-level NSGs (frontend, backend, private-endpoint) |
+| Compute | No public IPs on workload VMs |
+| Administration | Private administrative access through Azure Bastion |
+| Data | SQL and PostgreSQL via Private Endpoints |
+| DNS | Private DNS zones for both database engines |
+| Identity | System-assigned managed identity on VMs |
+| Secrets | Key Vault provisioned — secret migration still pending |
+| Monitoring | Log Analytics + Application Insights |
+| Encryption | Azure platform / TLS 1.2 minimum on storage |
 
-### NSG Rules Matrix
+### NSG Rules Matrix (Current)
 
 | NSG | Subnet | Rule | Dir | Prio | Source → Dest | Port |
 |---|---|---|---|---|---|---|
 | nsg-frontend | frontend-subnet | allow-appgateway-http | Inbound | 100 | 10.20.0.0/24 → 10.20.1.0/24 | 80 |
 | nsg-backend | backend-subnet | allow-frontend-backend | Inbound | 100 | 10.20.1.0/24 → * | 8080 |
-| nsg-backend | backend-subnet | allow-sql | Outbound | 110 | * → 10.20.3.0/24 | 1433 |
-| nsg-backend | backend-subnet | allow-postgresql | Outbound | 120 | * → 10.20.3.0/24 | 5432 |
+| nsg-backend | backend-subnet | allow-appgateway-backend | Inbound | 105 | 10.20.0.0/24 → * | 8080 |
+| nsg-backend | backend-subnet | allow-azure-load-balancer-probe | Inbound | 110 | AzureLoadBalancer → * | 8080 |
+| nsg-backend | backend-subnet | allow-sql | Outbound | 120 | * → 10.20.3.0/24 | 1433 |
+| nsg-backend | backend-subnet | allow-postgresql | Outbound | 130 | * → 10.20.3.0/24 | 5432 |
 | nsg-private-endpoint | PE-subnet | allow-backend-sql | Inbound | 100 | 10.20.2.0/24 → * | 1433 |
 | nsg-private-endpoint | PE-subnet | allow-backend-postgresql | Inbound | 110 | 10.20.2.0/24 → * | 5432 |
 
+> 📌 **Private Endpoint NSG Enforcement**
+> NSGs on the `private-endpoint-subnet` are enforced only if `private_endpoint_network_policies` is set to `NetworkSecurityGroupEnabled` on the subnet. This is configured on the spoke PE subnet in this deployment.
+
 > 📌 **NSG Semantics**
-> NSGs are **stateful packet filters** attached to subnets or NICs — not separate network hops. Traffic is evaluated *at* the subnet boundary: if a rule allows it, the packet proceeds to the destination; if denied, it is dropped. The flow diagrams above show the logical path, but physically the NSG rule is enforced inline at the subnet.
+> NSGs are stateful packet filters attached to subnets or NICs. Traffic is evaluated inline at the subnet boundary. The flow diagrams above show the logical path; physically, the NSG rule is enforced at the subnet.
 
 > 🔒 **Least-Privilege Achievement**
-> Backend VMs can only reach the SQL and PostgreSQL Private Endpoints on ports 1433 and 5432. Frontend VMs can only reach backend VMs on port 8080. No VM has a public IP. No database has public access. All secrets in Key Vault.
+> Backend VMs can only reach the SQL and PostgreSQL Private Endpoints on ports 1433 and 5432. Frontend VMs can only reach backend VMs on port 8080. App Gateway reaches frontend on :80 and backend on :8080. No VM has a public IP. No database has public access.
 
-### Compliance & Governance
+### Technical Controls vs. Organizational Compliance
 
-| Standard | Control | Status |
+> ⚠️ **Infrastructure Alone Does Not Establish Compliance**
+> The controls below are **technical implementations** in this Terraform deployment. Full CIS, ISO 27001, or PCI-DSS compliance requires organizational, procedural, and process controls beyond what infrastructure-as-code provides.
+
+| Standard | Technical Control | Status |
 |---|---|---|
-| CIS Azure Foundations | Network isolation | ✅ Compliant |
-| CIS Azure Foundations | No public VM IPs | ✅ Compliant |
-| CIS Azure Foundations | Encryption in transit (TLS 1.2+) | ✅ Compliant |
-| ISO 27001 | Access control | ✅ Compliant |
-| ISO 27001 | Logging & monitoring | ✅ Compliant |
-| PCI-DSS | Network segmentation | ✅ Compliant |
-| PCI-DSS | Secrets management | ⚠️ In progress |
+| CIS Azure Foundations | Network isolation | ✅ Implemented |
+| CIS Azure Foundations | No public VM IPs | ✅ Implemented |
+| CIS Azure Foundations | Encryption in transit (TLS 1.2+) | ✅ Implemented |
+| ISO 27001 | Access control (technical) | ✅ Technical control implemented |
+| ISO 27001 | Logging & monitoring (technical) | ✅ Technical control implemented |
+| PCI-DSS | Network segmentation (technical) | ✅ Technical control implemented |
+| PCI-DSS | Secrets management | 🟡 In progress |
+
+### Current Gaps (Dev Environment)
+
+| Item | Status |
+|---|---|
+| Key Vault Private Endpoint + DNS zone | 🔴 Missing — VMs cannot yet fetch secrets |
+| Plain-text secrets in tfvars | 🔴 Must migrate to Key Vault references |
+| HTTPS listener on App Gateway | 🟡 Pending — currently HTTP :80 only |
+| Bastion-to-VM SSH NSG rule | 🟡 Pending verification/addition |
+| NSG flow logs | ⚪ Planned |
+| Defender for Cloud plans | ⚪ Planned |
 
 ---
 
@@ -453,7 +518,7 @@ terraform-landing-zone/
 │
 └── modules/
     ├── rg/                      # Resource Groups
-    ├── network/                 # VNets + Subnets + Peerings ⭐
+    ├── network/                 # VNets + Subnets + Peerings
     ├── nsg/                     # Network Security Groups
     ├── nsg-association/         # Subnet ↔ NSG binding
     ├── public-ip/               # Public IPs
@@ -518,7 +583,7 @@ terraform-landing-zone/
 
 ### Key Terraform Patterns
 
-#### 1. Derived Locals (Computed Values)
+**1. Derived Locals (Computed Values)**
 
 ```hcl
 locals {
@@ -537,19 +602,12 @@ locals {
     if startswith(key, "backend_") &&
     nic.ip_configuration.private_ip_address != null
   ]
-
-  # Resolve private endpoint targets from module outputs
-  private_endpoint_targets = merge(
-    { for key, server in module.sql.sql_servers : "sql:${key}" => server.id },
-    { for key, server in module.postgresql.postgresql_servers : "postgresql:${key}" => server.id }
-  )
 }
 ```
 
-#### 2. Cross-Module Reference Resolution
+**2. Cross-Module Reference Resolution**
 
 ```hcl
-# NIC subnet ID resolved from network module
 module "nic" {
   network_interfaces = {
     for key, nic in var.network_interfaces : key => {
@@ -563,10 +621,10 @@ module "nic" {
 }
 ```
 
-#### 3. Peering Inside Network Module
+**3. Peering Inside Network Module**
 
 ```hcl
-# VNet Peering is part of network module — no separate module needed
+# VNet Peering lives inside the network module — high cohesion
 resource "azurerm_virtual_network_peering" "this" {
   for_each = {
     for peering in flatten([
@@ -588,14 +646,103 @@ resource "azurerm_virtual_network_peering" "this" {
 ```
 
 > 💡 **Best Practice: High Cohesion**
-> Peering lives inside the network module because it is a network concern. Creating a separate `modules/peering` would add unnecessary wiring and violate high-cohesion principles.
+> Peering lives inside the network module because it is a network concern. A separate `modules/peering` would add unnecessary wiring. Peering is data-driven via `for_each` so adding spoke-2, spoke-3, etc. does not require module changes — only new entries in `terraform.tfvars`.
 
 ---
 
-## 7. Deploy Anywhere — Reusable Template
+## 7. CI/CD & Security Validation Pipeline
+
+> ⚠️ **Status: Intended Pipeline**
+> The pipeline described below represents the **intended CI/CD validation flow** for this repository. It should only be described as "implemented" once the corresponding pipeline configuration (GitHub Actions or Azure DevOps YAML) actually exists in the repository.
+
+```
+Developer
+   │
+   ▼
+Git Commit
+   │
+   ▼
+┌───────────────┐
+│  terraform    │  ← Formatting
+│  fmt          │
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  terraform    │  ← Config validation
+│  validate     │
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  TFLint       │  ← Terraform linting
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  Checkov      │  ← IaC security / compliance
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  tfsec        │  ← Terraform security scan
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  Trivy        │  ← Vulnerability scanning
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  TruffleHog   │  ← Secret detection
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  Infracost    │  ← Cost estimation
+└───────┬───────┘
+        │
+        ▼
+┌───────────────┐
+│  terraform    │  ← Change preview
+│  plan         │
+└───────┬───────┘
+        │
+        ▼
+     Review
+        │
+        ▼
+┌───────────────┐
+│  terraform    │
+│  apply        │
+└───────┬───────┘
+        │
+        ▼
+Azure Infrastructure
+```
+
+### Tool Responsibilities
+
+| Tool | Purpose |
+|---|---|
+| `terraform fmt` | Enforce canonical Terraform formatting |
+| `terraform init` | Initialize providers and modules |
+| `terraform validate` | Validate configuration syntax and references |
+| `terraform plan` | Preview infrastructure changes |
+| **TFLint** | Terraform linting and best-practice checks |
+| **Checkov** | IaC security and compliance scanning |
+| **tfsec** | Terraform-focused security scanner |
+| **Trivy** | Vulnerability and misconfiguration scanning |
+| **TruffleHog** | Secret detection in Git history and diffs |
+| **Infracost** | Cost estimation on pull requests |
+
+---
+
+## 8. Deploy Anywhere — Reusable Template
 
 > ♻️ **Built as a Generic Landing Zone**
-> This codebase is not hardcoded to the Todo app. Any team can clone it and deploy their own **3-tier architecture** — e-commerce, blogging, internal CRM, microservices, or any workload that follows the presentation → application → data pattern.
+> This codebase is not hardcoded to a specific application. Any team can clone it and deploy their own 3-tier architecture by updating `terraform.tfvars` — e-commerce, blogging, internal CRM, microservices, or any workload that follows the presentation → application → data pattern.
 
 ### What Is Reusable
 
@@ -615,7 +762,7 @@ resource "azurerm_virtual_network_peering" "this" {
 | private-access | ✅ Yes | DNS zones, PE targets in tfvars |
 | monitoring | ✅ Yes | Retention in tfvars |
 
-### Deployment Steps (For Any Team)
+### Deployment Steps
 
 ```bash
 # 1. Clone the repository
@@ -626,11 +773,6 @@ cd terraform-azure-landing-zone
 cd env/dev
 
 # 3. Update terraform.tfvars with your values
-#    - location, environment, tags
-#    - resource_groups
-#    - vnets, subnets, peerings
-#    - VMs, load balancers, app gateway
-#    - SQL, PostgreSQL, Key Vault, monitoring
 
 # 4. Initialize Terraform
 terraform init
@@ -694,29 +836,14 @@ private_endpoints = {
 
 ### Who Can Use This?
 
-**🏢 Enterprise Teams**
-- Standardize landing zones
-- Compliance-ready baseline
-- Multi-team RBAC
-
-**🚀 Startups**
-- Production-grade from day 1
-- Cost-optimized defaults
-- Scale when needed
-
-**🎓 Learners**
-- Real-world Terraform patterns
-- Azure best practices
-- Modular architecture
-
-**🔧 DevOps Engineers**
-- CI/CD ready structure
-- Environment separation
-- Reusable modules
+- **🏢 Enterprise Teams** — Standardize landing zones, compliance-ready baseline, multi-team RBAC
+- **🚀 Startups** — Production-grade from day 1, cost-optimized defaults, scale when needed
+- **🎓 Learners** — Real-world Terraform patterns, Azure best practices, modular architecture
+- **🔧 DevOps Engineers** — CI/CD ready structure, environment separation, reusable modules
 
 ---
 
-## 8. Resource Inventory
+## 9. Resource Inventory
 
 ### Network
 
@@ -736,16 +863,23 @@ private_endpoints = {
 
 | VM | IP | SKU | OS | Role | Port |
 |---|---|---|---|---|---|
-| vm-fe-01 | 10.20.1.4 | Standard_B2s | Ubuntu 22.04 | Frontend | 80 |
-| vm-fe-02 | 10.20.1.5 | Standard_B2s | Ubuntu 22.04 | Frontend | 80 |
-| vm-be-01 | 10.20.2.4 | Standard_B2s | Ubuntu 22.04 | Backend | 8080 |
-| vm-be-02 | 10.20.2.5 | Standard_B2s | Ubuntu 22.04 | Backend | 8080 |
+| vm-fe-01 | 10.20.1.4 | Standard_B2s | Ubuntu 22.04 Gen2 | Frontend | 80 |
+| vm-fe-02 | 10.20.1.5 | Standard_B2s | Ubuntu 22.04 Gen2 | Frontend | 80 |
+| vm-be-01 | 10.20.2.4 | Standard_B2s | Ubuntu 22.04 Gen2 | Backend | 8080 |
+| vm-be-02 | 10.20.2.5 | Standard_B2s | Ubuntu 22.04 Gen2 | Backend | 8080 |
+
+**All VMs:**
+- Private IP only — no public IP assigned
+- SSH key-based authentication
+- System-assigned managed identity enabled
+- Boot diagnostics enabled
+- Premium_LRS OS disk with ReadWrite caching
 
 ### Load Balancing
 
 | LB | Type | IP | Frontend | Backend | Probe |
 |---|---|---|---|---|---|
-| App Gateway | Public WAF_v2 | pip-agw | 80 | 80 | /health |
+| App Gateway | Public WAF_v2 | pip-agw | 80 | 80 / 8080 | /health |
 | Internal LB | Private Standard | 10.20.2.10 | 8080 | 8080 | /health |
 
 ### Data
@@ -765,39 +899,58 @@ private_endpoints = {
 
 | Resource | Name | Config |
 |---|---|---|
-| Key Vault | kvhubspoke001 | RBAC · Purge protection · Public OFF |
-| Bastion | bas-hubandspokewl-dev | Standard SKU · Public IP |
-| Log Analytics | law-hubandspokewl-dev | PerGB2018 · 30 days |
+| Key Vault | kvhubspoke001 | RBAC · Purge protection · Soft delete 90d · Public OFF |
+| Bastion | bas-hubandspokewl-dev | Standard SKU · Public IP (Standard, Static) |
+| Log Analytics | law-hubandspokewl-dev | PerGB2018 · 30-day retention |
 | App Insights | appi-hubandspokewl-dev | Web · Linked to LAW |
+| Storage | sthubspokewldev001 | Standard_LRS · TLS 1.2 · Public OFF · No anonymous nested items |
+
+### Public Exposure
+
+| Resource | Public Exposure |
+|---|---|
+| Application Gateway | ✅ Public IP |
+| Azure Bastion | ✅ Public IP |
+| Frontend VMs | ✅ None |
+| Backend VMs | ✅ None |
+| Internal Load Balancer | ✅ None (private only) |
+| Azure SQL | ✅ None (public access disabled) |
+| PostgreSQL | ✅ None (public access disabled) |
+| Key Vault | ✅ None (public access disabled) |
+| Storage | ✅ None (public access disabled) |
 
 ---
 
-## 9. Future High-Availability Evolution
+## 10. Future High-Availability Reference Designs
 
-The current architecture is a single-region, single-zone deployment. As business requirements grow, the same Terraform patterns extend cleanly into three progressive HA tiers. **No redesign required** — only additional configuration in `terraform.tfvars` and new zones/regions in the resource definitions.
+> ⚠️ **Reference Designs — Not Currently Provisioned**
+> The following HA architectures are **future-state reference designs** and are **not provisioned** by the current development deployment. Components such as Azure Firewall, NAT Gateway, Traffic Manager, multi-region resources, Cosmos DB, zone redundancy, and Auto-Failover Groups are **not** part of the deployed infrastructure today.
 
-| Level | SLA | Description |
+> ⚠️ **SLA / RTO / RPO Figures Are Targets, Not Guarantees**
+> The numbers below describe *typical target outcomes* for architectures like these. Actual SLA, RTO, and RPO depend on implementation, testing, database replication, DNS behavior, application recovery automation, and operational readiness. An architecture diagram does not by itself provide an SLA.
+
+| Level | Target SLA | Description |
 |---|---|---|
-| **Level 1 — Zone-Redundant** | 99.95% | Single region · 3 AZs · Production-ready |
-| **Level 2 — Active-Passive** | 99.99% | 2 regions · DR failover · RTO ~5 min |
-| **Level 3 — Active-Active** | 99.999% | 2 regions · Both active · RTO < 30s |
+| **Level 1 — Zone-Redundant** | 99.95% | Single region · 3 AZs · Production-oriented |
+| **Level 2 — Active-Passive** | 99.99% | 2 regions · DR failover · RTO target ~5 min |
+| **Level 3 — Active-Active** | 99.999% | 2 regions · Both active · RTO target < 30s |
 
-### Level 1 — Zone-Redundant Single Region (Production-Ready)
+### Level 1 — Zone-Redundant Single Region
 
-Adds a third VM per tier across three availability zones, enables zone-redundant SKUs on App Gateway, ILB, SQL, and PostgreSQL, and moves the firewall into the hub.
+Adds a third VM per tier across three availability zones, enables zone-redundant SKUs on App Gateway, ILB, SQL, and PostgreSQL, and introduces a zone-redundant Azure Firewall in the hub.
 
 ```mermaid
 flowchart TB
   Internet(("INTERNET<br/>HTTPS :443"))
 
   subgraph HUB["HUB VNet · 10.10.0.0/16 · Shared Services"]
-    BASTION["Azure Bastion<br/>Zone Redundant<br/>PIP: pip-bastion"]
-    FW["Azure Firewall Premium<br/>IDPS: Alert & Deny<br/>Zone Redundant"]
-    DNS["Private DNS Zones<br/>privatelink.*"]
+    BASTION["Azure Bastion<br/>Zone Redundant"]
+    FW["Azure Firewall Premium<br/>IDPS · Zone Redundant"]
+    DNS["Private DNS Zones"]
   end
 
   subgraph SPOKE["SPOKE VNet · 10.20.0.0/16 · Zone Redundant"]
-    AGW["App Gateway WAF_v2<br/>Zone Redundant<br/>Min Capacity: 2"]
+    AGW["App Gateway WAF_v2<br/>Zone Redundant · Min Cap: 2"]
     FE1["vm-fe-01 · Zone 1<br/>10.20.1.4:80"]
     FE2["vm-fe-02 · Zone 2<br/>10.20.1.5:80"]
     FE3["vm-fe-03 · Zone 3<br/>10.20.1.6:80"]
@@ -808,7 +961,7 @@ flowchart TB
     NAT["NAT Gateway<br/>Outbound only"]
   end
 
-  SQL[("Azure SQL<br/>Zone Redundant<br/>Business Critical")]
+  SQL[("Azure SQL<br/>Zone Redundant")]
   PG[("PostgreSQL Flexible<br/>HA Zone Redundant")]
 
   Internet ==> AGW
@@ -833,11 +986,11 @@ flowchart TB
   SPOKE -.-> FW
   SPOKE -.-> NAT
 
-  classDef hubStyle fill:#d1c4e9,stroke:#4527a0,stroke-width:2px
-  classDef spokeStyle fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px
-  classDef dataStyle fill:#ffe0b2,stroke:#e65100,stroke-width:2px
-  classDef secStyle fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px
-  classDef lbStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+  classDef hubStyle fill:#e9d5ff,stroke:#7c3aed,stroke-width:2px
+  classDef spokeStyle fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef dataStyle fill:#fed7aa,stroke:#ea580c,stroke-width:2px
+  classDef secStyle fill:#fecaca,stroke:#dc2626,stroke-width:2px
+  classDef lbStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px
 
   class HUB hubStyle
   class SPOKE spokeStyle
@@ -852,19 +1005,19 @@ flowchart TB
 | Frontend VMs | 3 VMs across zones 1, 2, 3 |
 | Internal LB | Zone-redundant frontend IP |
 | Backend VMs | 3 VMs across zones 1, 2, 3 |
-| Azure SQL | Zone-redundant · Business Critical |
-| PostgreSQL Flexible | Zone-redundant HA |
+| Azure SQL | Zone-redundant · Business Critical SKU (target) |
+| PostgreSQL Flexible | Zone-redundant HA (target) |
 | Bastion | Zone-redundant |
 | Azure Firewall | Zone-redundant Premium |
 
-### Level 2 — Multi-Region Active-Passive (Disaster Recovery)
+### Level 2 — Multi-Region Active-Passive (DR)
 
-Adds a secondary region (Japan West) as a passive standby. Traffic Manager provides global priority routing with 30-second failover. SQL uses geo-replication and PostgreSQL uses read replicas. Global VNet peering connects both regions.
+Adds a secondary region as a passive standby. Traffic Manager provides global priority routing with health-based failover. SQL uses geo-replication and PostgreSQL uses read replicas. Global VNet peering connects both regions.
 
 ```mermaid
 flowchart TB
   Internet(("INTERNET<br/>HTTPS :443"))
-  TM["Traffic Manager<br/>Priority Routing<br/>Health Probes 30s"]
+  TM["Traffic Manager<br/>Priority Routing"]
 
   subgraph PRIMARY["PRIMARY · Japan East · ACTIVE"]
     HUB_E["HUB VNet · 10.10.0.0/16<br/>Bastion · Firewall · DNS"]
@@ -894,10 +1047,10 @@ flowchart TB
   SQL_E -.->|"Geo-Replication Async"| SQL_W
   PG_E -.->|"Read Replica Async"| PG_W
 
-  classDef tmStyle fill:#f8bbd0,stroke:#880e4f,stroke-width:3px
-  classDef hubStyle fill:#d1c4e9,stroke:#4527a0,stroke-width:2px
-  classDef spokeStyle fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px
-  classDef dataStyle fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+  classDef tmStyle fill:#fbcfe8,stroke:#be185d,stroke-width:3px
+  classDef hubStyle fill:#e9d5ff,stroke:#7c3aed,stroke-width:2px
+  classDef spokeStyle fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef dataStyle fill:#fed7aa,stroke:#ea580c,stroke-width:2px
 
   class TM tmStyle
   class HUB_E,HUB_W hubStyle
@@ -907,28 +1060,31 @@ flowchart TB
 
 | Component | Primary | Secondary | Failover |
 |---|---|---|---|
-| Traffic Manager | Priority 1 | Priority 2 | Automatic (30s) |
-| App Gateway | Active | Passive | Automatic |
-| Azure SQL | Active | Read-Only | Manual Promote |
-| PostgreSQL | Active | Read Replica | Manual Promote |
+| Traffic Manager | Priority 1 | Priority 2 | Automatic (probe-driven) |
+| App Gateway | Active | Passive | Automatic via TM |
+| Azure SQL | Active | Read-Only | Manual promote |
+| PostgreSQL | Active | Read Replica | Manual promote |
 | Storage | GRS | GRS | Automatic |
 
-**RTO:** ~5 min · **RPO:** ~5 min
+**Target RTO:** ~5 min · **Target RPO:** ~5 min · actual values depend on implementation and testing.
 
 ### Level 3 — Multi-Region Active-Active (Mission Critical)
 
-Both regions serve live traffic. Traffic Manager uses performance-based routing to send users to the nearest healthy region. SQL uses Auto-Failover Groups (bi-directional), PostgreSQL uses bi-directional replication, and Cosmos DB uses multi-master for write-anywhere capability.
+Both regions serve live traffic. Traffic Manager uses performance-based routing. SQL uses Auto-Failover Groups. Cosmos DB (multi-master) can provide write-anywhere capability. PostgreSQL multi-region active-active is **not a simple toggle** — it requires a separately designed replication and application consistency strategy.
+
+> ⚠️ **PostgreSQL Multi-Region Active-Active Is a Design Problem, Not a Configuration Flag**
+> Active-active PostgreSQL at global scale involves replication topology, conflict resolution, connection routing, and application-level consistency decisions. It should be treated as a dedicated architecture project, not as a Terraform flag.
 
 ```mermaid
 flowchart TB
   Internet(("INTERNET<br/>HTTPS :443"))
-  TM["Traffic Manager<br/>Performance Routing<br/>Active-Active"]
+  TM["Traffic Manager<br/>Performance Routing"]
 
   subgraph JPE["JAPAN EAST · ACTIVE"]
     HUB_JPE["HUB · 10.10.0.0/16<br/>Bastion · Firewall · DNS"]
     SPOKE_JPE["SPOKE · 10.20.0.0/16<br/>AGW · FE · ILB · BE · PE"]
     SQL_JPE[("SQL<br/>Auto-Failover Group")]
-    PG_JPE[("PostgreSQL<br/>Bi-Directional Replica")]
+    PG_JPE[("PostgreSQL<br/>Replication Strategy")]
     COSMOS_JPE[("Cosmos DB<br/>Multi-Master")]
   end
 
@@ -936,7 +1092,7 @@ flowchart TB
     HUB_JPW["HUB · 10.110.0.0/16<br/>Bastion · Firewall · DNS"]
     SPOKE_JPW["SPOKE · 10.120.0.0/16<br/>AGW · FE · ILB · BE · PE"]
     SQL_JPW[("SQL<br/>Auto-Failover Group")]
-    PG_JPW[("PostgreSQL<br/>Bi-Directional Replica")]
+    PG_JPW[("PostgreSQL<br/>Replication Strategy")]
     COSMOS_JPW[("Cosmos DB<br/>Multi-Master")]
   end
 
@@ -957,14 +1113,13 @@ flowchart TB
   SPOKE_JPE <==>|"Global Peering"| SPOKE_JPW
 
   SQL_JPE <==>|"Auto-Failover"| SQL_JPW
-  PG_JPE <==>|"Bi-Directional"| PG_JPW
   COSMOS_JPE <==>|"Multi-Master"| COSMOS_JPW
 
-  classDef tmStyle fill:#f8bbd0,stroke:#880e4f,stroke-width:3px
-  classDef hubStyle fill:#d1c4e9,stroke:#4527a0,stroke-width:2px
-  classDef spokeStyle fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px
-  classDef dataStyle fill:#ffe0b2,stroke:#e65100,stroke-width:2px
-  classDef cosmosStyle fill:#e1bee7,stroke:#6a1b9a,stroke-width:2px
+  classDef tmStyle fill:#fbcfe8,stroke:#be185d,stroke-width:3px
+  classDef hubStyle fill:#e9d5ff,stroke:#7c3aed,stroke-width:2px
+  classDef spokeStyle fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef dataStyle fill:#fed7aa,stroke:#ea580c,stroke-width:2px
+  classDef cosmosStyle fill:#e9d5ff,stroke:#9333ea,stroke-width:2px
 
   class TM tmStyle
   class HUB_JPE,HUB_JPW hubStyle
@@ -975,17 +1130,17 @@ flowchart TB
 
 | Component | HA Strategy |
 |---|---|
-| Traffic Manager | Performance routing · both active |
+| Traffic Manager | Performance routing · both regions active |
 | App Gateway | Both regions active |
 | Azure SQL | Auto-Failover Group (bi-directional) |
-| PostgreSQL | Bi-directional replication |
+| PostgreSQL | Dedicated replication/consistency design required |
 | Cosmos DB | Multi-master · write anywhere |
 | Storage | RA-GZRS |
 | VNet Peering | Global mesh |
 
-**RTO:** < 30s · **RPO:** < 5s · **SLA:** 99.999%
+**Target RTO:** < 30s · **Target RPO:** < 5s · **Target SLA:** 99.999% — targets subject to design, testing, and operational readiness.
 
-### Comparison Matrix — 3 Levels
+### Comparison Matrix
 
 | Feature | Level 1 | Level 2 | Level 3 |
 |---|---|---|---|
@@ -995,84 +1150,105 @@ flowchart TB
 | App Gateway | Zone-Redundant | Zone-Redundant ×2 | Zone-Redundant ×2 |
 | VMs | 3 across zones | 3 per region | 3 per region |
 | Azure SQL | Zone-Redundant | Geo-Replica | Auto-Failover Group |
-| PostgreSQL | Zone-Redundant HA | Read Replica | Bi-Directional |
+| PostgreSQL | Zone-Redundant HA | Read Replica | Dedicated design |
 | Cosmos DB | — | — | Multi-Master |
 | Traffic Manager | — | Priority | Performance |
 | Azure Firewall | Premium | Premium ×2 | Premium ×2 |
-| SLA | 99.95% | 99.99% | 99.999% |
-| RTO | N/A | ~5 min | < 30s |
-| RPO | N/A | ~5 min | < 5s |
-| Relative Cost | $$ | $$$ | $$$$ |
+| Target SLA | 99.95% | 99.99% | 99.999% |
+| Target RTO | N/A | ~5 min | < 30s |
+| Target RPO | N/A | ~5 min | < 5s |
 | Use Case | Production | DR Required | Mission Critical |
 
 > 💡 **Migration Path**
-> Because the codebase is data-driven and modular, upgrading from Level 1 to Level 2 or Level 3 only requires: (a) adding new zone attributes to VMs, (b) enabling HA flags on SQL and PostgreSQL, (c) adding Traffic Manager and global peering configurations. No application code or module redesign is required.
+> Because the codebase is data-driven and modular, upgrading from Level 1 to Level 2 or Level 3 requires primarily configuration changes: adding zone attributes to VMs, enabling HA flags on SQL and PostgreSQL, adding Traffic Manager, and adding global peering. The current foundation is designed to support this evolution with limited infrastructure changes, but multi-zone and multi-region deployments may also require additional networking, database, DNS, security, and application-level design. This is not a "no redesign required" scenario.
 
 ---
 
-## 10. Roadmap & Recommendations
+## 11. Roadmap & Current Status
 
 ### Immediate (Sprint 1)
 
 | # | Item | Priority | Effort |
 |---|---|---|---|
-| 1 | Verify VNet peering is applied in tfvars | Critical | 1 hour |
-| 2 | Add NSG rule for SSH from Bastion (10.10.0.0/24 :22) | Critical | 30 min |
-| 3 | Move secrets to Key Vault (remove plain-text passwords) | Critical | 4 hours |
-| 4 | Verify PostgreSQL PE RG is rg-data | High | 15 min |
+| 1 | Validate Hub ↔ Spoke VNet peering after deployment | 🔵 Medium | 30 min |
+| 2 | Allow SSH from Azure Bastion subnet to private VM subnets | 🔴 Critical | 30 min |
+| 3 | Migrate secrets to Key Vault (remove plain-text passwords from tfvars) | 🔴 Critical | 4 hours |
+| 4 | Add Key Vault Private Endpoint + DNS zone | 🔴 Critical | 4 hours |
 
 ### Short-Term (Sprint 2-3)
 
 | # | Item | Priority | Effort |
 |---|---|---|---|
-| 5 | Add Key Vault Private Endpoint + DNS zone | High | 4 hours |
-| 6 | Enable HTTPS listener on App Gateway (443 + cert) | High | 6 hours |
-| 7 | Rename storage account from placeholder | High | 30 min |
-| 8 | Add NSG flow logs to Log Analytics | Medium | 2 hours |
-| 9 | Enable Defender for Cloud (Servers + SQL) | Medium | 1 hour |
+| 5 | Enable HTTPS listener on App Gateway (443 + cert from Key Vault) | 🟡 High | 6 hours |
+| 6 | Add HTTP → HTTPS redirect on App Gateway | 🟡 High | 2 hours |
+| 7 | Add NSG flow logs to Log Analytics | 🔵 Medium | 2 hours |
+| 8 | Enable Defender for Cloud (Servers + SQL) | 🔵 Medium | 1 hour |
 
 ### Long-Term (Quarter 2+)
 
 | # | Item | Priority | Effort |
 |---|---|---|---|
-| 10 | Add Azure Firewall in hub for egress control | Medium | 2 weeks |
-| 11 | Add second spoke for staging environment | Medium | 1 week |
-| 12 | Implement Azure Policy for compliance enforcement | Medium | 1 week |
-| 13 | Add Front Door for global load balancing | Low | 2 weeks |
-| 14 | Implement CI/CD pipeline (GitHub Actions / Azure DevOps) | Medium | 2 weeks |
-| 15 | Multi-region disaster recovery (paired region) | Low | 1 month |
-| 16 | Migrate PostgreSQL to delegated subnet (VNet injection) | Low | 2 weeks |
+| 9 | Add Azure Firewall in hub for centralized egress control | 🔵 Medium | 2 weeks |
+| 10 | Add second spoke for staging environment | 🔵 Medium | 1 week |
+| 11 | Implement Azure Policy for compliance enforcement | 🔵 Medium | 1 week |
+| 12 | Implement CI/CD pipeline (GitHub Actions / Azure DevOps) | 🔵 Medium | 2 weeks |
+| 13 | Multi-region DR (paired region — Level 2) | ⚪ Low | 1 month |
+| 14 | Evaluate PostgreSQL VNet-integrated networking (delegated subnet) | ⚪ Low | 2 weeks |
 
-### Known Gaps
+### Current Status
 
-> ⚠️ **Key Vault Network Access**
-> Key Vault has `public_network_access_enabled = false`, but no Private Endpoint or DNS zone. VMs currently cannot fetch secrets. Add PE + DNS zone in the next sprint.
-
-> 🔴 **Plain-Text Secrets**
-> SQL admin password (`CHANGE-ME-USE-SECRET`), PostgreSQL admin password (`CHANGE-ME-USE-SECRET`), and VM admin password (`DevVm@2026Pass`) are in tfvars. Move to Key Vault references or Azure Key Vault data sources immediately.
-
-> ⚠️ **No HTTPS Listener**
-> App Gateway only has an HTTP listener. Add a certificate (from Key Vault) and enable an HTTPS listener for production-grade TLS.
+| Area | Status |
+|---|---|
+| Hub-Spoke topology | ✅ Implemented |
+| VNet Peering (Hub ↔ Spoke) | ✅ Configured |
+| App Gateway WAF_v2 | ✅ Implemented |
+| Frontend tier | ✅ Implemented |
+| Backend tier | ✅ Implemented |
+| Internal Load Balancer | ✅ Implemented |
+| NSG segmentation | ✅ Implemented |
+| AppGW → Backend NSG rule | ✅ Implemented |
+| Private Endpoints (SQL, PostgreSQL) | ✅ Implemented |
+| Private DNS | ✅ Configured |
+| Azure Bastion | ✅ Implemented |
+| VM public IPs | ✅ None |
+| Database public access | ✅ Disabled |
+| Storage public access | ✅ Disabled |
+| Key Vault (provisioned) | ✅ Implemented |
+| Key Vault secret migration | 🟡 Pending |
+| Key Vault Private Endpoint | 🟡 Pending |
+| HTTPS on App Gateway | 🟡 Pending |
+| Bastion → VM SSH NSG rule | 🟡 Pending |
+| NSG Flow Logs | ⚪ Planned |
+| Defender for Cloud | ⚪ Planned |
+| Multi-spoke expansion | ⚪ Future |
+| Production-grade HA | ⚪ Future |
 
 ### Success Metrics
 
-| Metric | Current | Target |
-|---|---|---|
-| Public endpoints | 2 (AGW, Bastion) | 2 (acceptable) |
-| VMs with public IPs | 0 | 0 ✅ |
-| Private Link coverage | SQL + PostgreSQL | SQL + PG + KV + Storage |
-| Secrets in Key Vault | 0% | 100% |
-| WAF coverage | 100% (AGW) | 100% ✅ |
-| Centralized logging | 100% | 100% ✅ |
-| Total resources managed | 250+ | 250+ ✅ |
+| Metric | Current State |
+|---|---|
+| Public workload VM IPs | ✅ 0 |
+| Public database access | ✅ Disabled |
+| App Gateway WAF | ✅ Enabled (Prevention) |
+| SQL Private Endpoint | ✅ Enabled |
+| PostgreSQL Private Endpoint | ✅ Enabled |
+| Private DNS | ✅ Configured |
+| Bastion | ✅ Enabled |
+| Centralized monitoring | ✅ Configured |
+| HTTPS ingress | 🟡 Pending (dev is HTTP) |
+| Secret migration to Key Vault | 🟡 Pending |
+| Bastion SSH NSG rule | 🟡 Verify / pending |
+| Multi-spoke expansion | ⚪ Future |
+| Production-grade HA | ⚪ Future |
 
 ---
+
+## Footer
 
 **Hub-Spoke Landing Zone Monolith Architecture**
 Environment: dev · Region: japaneast · IaC: Terraform
 
-- GitHub: [github.com/tripathicle](https://github.com/tripathicle/)
-- LinkedIn: [linkedin.com/in/tstripathi](https://www.linkedin.com/in/tstripathi/)
+[GitHub: github.com/tripathicle](https://github.com/tripathicle/) · [LinkedIn: linkedin.com/in/tstripathi](https://www.linkedin.com/in/tstripathi/)
 
 Prepared for: Engineering Management Review
 
