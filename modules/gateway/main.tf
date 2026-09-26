@@ -20,7 +20,7 @@ resource "azurerm_application_gateway" "this" {
   }
 
   # ----------------------------------------------------------
-  # WAF CONFIGURATION
+  # WAF
   # ----------------------------------------------------------
 
   dynamic "waf_configuration" {
@@ -75,52 +75,112 @@ resource "azurerm_application_gateway" "this" {
     protocol                       = each.value.http_listener.protocol
   }
 
-  # ----------------------------------------------------------
-  # BACKEND ADDRESS POOL
-  # ----------------------------------------------------------
+  # ==========================================================
+  # BACKEND ADDRESS POOLS
+  # ==========================================================
 
-  backend_address_pool {
-    name         = each.value.backend_address_pool.name
-    ip_addresses = each.value.backend_address_pool.ip_addresses
+  dynamic "backend_address_pool" {
+    for_each = each.value.backend_address_pools
+
+    content {
+      name         = backend_address_pool.key
+      ip_addresses = backend_address_pool.value.ip_addresses
+    }
   }
 
-  # ----------------------------------------------------------
-  # HEALTH PROBE
-  # ----------------------------------------------------------
+  # ==========================================================
+  # HEALTH PROBES
+  # ==========================================================
 
-  probe {
-    name                = each.value.health_probe.name
-    protocol            = each.value.health_probe.protocol
-    port                = each.value.health_probe.port
-    path                = each.value.health_probe.path
-    interval            = each.value.health_probe.interval
-    timeout             = each.value.health_probe.timeout
-    unhealthy_threshold = each.value.health_probe.unhealthy_threshold
+  dynamic "probe" {
+    for_each = each.value.health_probes
+
+    content {
+      name                = probe.value.name
+      protocol            = probe.value.protocol
+      port                = probe.value.port
+      path                = probe.value.path
+      interval            = probe.value.interval
+      timeout             = probe.value.timeout
+      unhealthy_threshold = probe.value.unhealthy_threshold
+    }
   }
 
-  # ----------------------------------------------------------
+  # ==========================================================
   # BACKEND HTTP SETTINGS
-  # ----------------------------------------------------------
+  # ==========================================================
 
-  backend_http_settings {
-    name                  = each.value.backend_http_settings.name
-    cookie_based_affinity = each.value.backend_http_settings.cookie_based_affinity
-    port                  = each.value.backend_http_settings.port
-    protocol              = each.value.backend_http_settings.protocol
-    request_timeout       = each.value.backend_http_settings.request_timeout
-    probe_name            = each.value.health_probe.name
+  dynamic "backend_http_settings" {
+    for_each = each.value.backend_http_settings
+
+    content {
+      name                  = backend_http_settings.value.name
+      cookie_based_affinity = backend_http_settings.value.cookie_based_affinity
+      port                  = backend_http_settings.value.port
+      protocol              = backend_http_settings.value.protocol
+      request_timeout       = backend_http_settings.value.request_timeout
+      probe_name            = backend_http_settings.value.probe_name
+    }
   }
 
-  # ----------------------------------------------------------
-  # REQUEST ROUTING
-  # ----------------------------------------------------------
+  # ==========================================================
+  # URL PATH MAP
+  # ==========================================================
+  #
+  # Default:
+  #   / -> frontend
+  #
+  # Path:
+  #   /api/* -> backend
+  #
+  # ==========================================================
+
+  dynamic "url_path_map" {
+    for_each = [
+      each.value.request_routing_rule
+    ]
+
+    content {
+      name = url_path_map.value.url_path_map_name
+
+      default_backend_address_pool_name = (
+        url_path_map.value.default_backend_address_pool_name
+      )
+
+      default_backend_http_settings_name = (
+        url_path_map.value.default_backend_http_settings_name
+      )
+
+      dynamic "path_rule" {
+        for_each = url_path_map.value.path_rules
+
+        content {
+          name  = path_rule.value.name
+          paths = path_rule.value.paths
+
+          backend_address_pool_name = (
+            path_rule.value.backend_address_pool_name
+          )
+
+          backend_http_settings_name = (
+            path_rule.value.backend_http_settings_name
+          )
+        }
+      }
+    }
+  }
+
+  # ==========================================================
+  # REQUEST ROUTING RULE
+  # ==========================================================
 
   request_routing_rule {
-    name                       = each.value.request_routing_rule.name
-    rule_type                  = each.value.request_routing_rule.rule_type
-    http_listener_name         = each.value.request_routing_rule.http_listener_name
-    backend_address_pool_name  = each.value.request_routing_rule.backend_address_pool_name
-    backend_http_settings_name = each.value.request_routing_rule.backend_http_settings_name
+    name               = each.value.request_routing_rule.name
+    priority           = each.value.request_routing_rule.priority
+    rule_type          = each.value.request_routing_rule.rule_type
+    http_listener_name = each.value.request_routing_rule.http_listener_name
+
+    url_path_map_name = each.value.request_routing_rule.url_path_map_name
   }
 
   # ----------------------------------------------------------
