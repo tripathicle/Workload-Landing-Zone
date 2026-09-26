@@ -1,7 +1,3 @@
-# ============================================================
-# AZURE INTERNAL LOAD BALANCER
-# ============================================================
-
 resource "azurerm_lb" "this" {
   for_each = var.load_balancers
 
@@ -10,17 +6,10 @@ resource "azurerm_lb" "this" {
   resource_group_name = each.value.resource_group_name
   sku                 = each.value.sku
 
-  # ----------------------------------------------------------
-  # PRIVATE FRONTEND
-  # ----------------------------------------------------------
-
   frontend_ip_configuration {
-    name = each.value.frontend_ip_configuration.name
-
-    subnet_id = each.value.frontend_ip_configuration.subnet_id
-
-    private_ip_address = each.value.frontend_ip_configuration.private_ip_address
-
+    name                          = each.value.frontend_ip_configuration.name
+    subnet_id                     = each.value.frontend_ip_configuration.subnet_id
+    private_ip_address            = each.value.frontend_ip_configuration.private_ip_address
     private_ip_address_allocation = "Static"
   }
 
@@ -30,20 +19,12 @@ resource "azurerm_lb" "this" {
   )
 }
 
-# ============================================================
-# BACKEND ADDRESS POOL
-# ============================================================
-
 resource "azurerm_lb_backend_address_pool" "this" {
   for_each = var.load_balancers
 
   name            = each.value.backend_address_pool.name
   loadbalancer_id = azurerm_lb.this[each.key].id
 }
-
-# ============================================================
-# BACKEND ADDRESS POOL MEMBERS
-# ============================================================
 
 resource "azurerm_lb_backend_address_pool_address" "this" {
   for_each = {
@@ -69,10 +50,6 @@ resource "azurerm_lb_backend_address_pool_address" "this" {
   virtual_network_id = each.value.virtual_network_id
 }
 
-# ============================================================
-# HEALTH PROBE
-# ============================================================
-
 resource "azurerm_lb_probe" "this" {
   for_each = var.load_balancers
 
@@ -91,10 +68,6 @@ resource "azurerm_lb_probe" "this" {
   number_of_probes    = each.value.health_probe.number_of_probes
 }
 
-# ============================================================
-# LOAD BALANCER RULE
-# ============================================================
-
 resource "azurerm_lb_rule" "this" {
   for_each = var.load_balancers
 
@@ -112,8 +85,7 @@ resource "azurerm_lb_rule" "this" {
 
   probe_id = azurerm_lb_probe.this[each.key].id
 
-  # AzureRM 5.x
-  floating_ip_enabled     = each.value.lb_rule.floating_ip_enabled
+  enable_floating_ip      = each.value.lb_rule.enable_floating_ip
   idle_timeout_in_minutes = each.value.lb_rule.idle_timeout_in_minutes
-  tcp_reset_enabled       = each.value.lb_rule.tcp_reset_enabled
+  enable_tcp_reset        = each.value.lb_rule.enable_tcp_reset
 }
