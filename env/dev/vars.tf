@@ -247,8 +247,6 @@ variable "load_balancers" {
     location            = string
     sku                 = string
 
-    # The ILB is reached from the frontend subnet,
-    # but its private frontend IP is hosted in the backend subnet.
     vnet_key   = string
     subnet_key = string
 
@@ -275,9 +273,9 @@ variable "load_balancers" {
       protocol                = string
       frontend_port           = number
       backend_port            = number
-      enable_floating_ip      = bool
+      floating_ip_enabled     = bool
       idle_timeout_in_minutes = number
-      enable_tcp_reset        = bool
+      tcp_reset_enabled       = bool
     })
 
     tags = map(string)
