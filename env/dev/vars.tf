@@ -273,13 +273,49 @@ variable "load_balancers" {
       protocol                = string
       frontend_port           = number
       backend_port            = number
-      floating_ip_enabled     = bool
+      enable_floating_ip      = bool
       idle_timeout_in_minutes = number
-      tcp_reset_enabled       = bool
+      enable_tcp_reset        = bool
     })
 
-    tags = map(string)
+    tags = optional(map(string), {})
   }))
+
+  validation {
+    condition = alltrue([
+      for key, lb in var.load_balancers :
+      contains(["Basic", "Standard"], lb.sku)
+    ])
+
+    error_message = "Load Balancer SKU must be either Basic or Standard."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, lb in var.load_balancers :
+      contains(["Tcp", "Udp"], lb.lb_rule.protocol)
+    ])
+
+    error_message = "Load Balancer rule protocol must be Tcp or Udp."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, lb in var.load_balancers :
+      contains(["Http", "Https", "Tcp"], lb.health_probe.protocol)
+    ])
+
+    error_message = "Health probe protocol must be Http, Https, or Tcp."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, lb in var.load_balancers :
+      lb.frontend_ip_configuration.private_ip_address != ""
+    ])
+
+    error_message = "Every Load Balancer must have a private frontend IP address."
+  }
 }
 
 variable "key_vaults" {
@@ -486,19 +522,32 @@ variable "application_insights" {
 
 
 # APPLICATION GATEWAYS
+# ============================================================
+# APPLICATION GATEWAYS
+# ============================================================
+
 variable "application_gateways" {
   description = "Application Gateway definitions for workload ingress."
 
   type = map(object({
+
     name                = string
     resource_group_name = string
     location            = string
+
+    # --------------------------------------------------------
+    # SKU
+    # --------------------------------------------------------
 
     sku = object({
       name     = string
       tier     = string
       capacity = number
     })
+
+    # --------------------------------------------------------
+    # WAF
+    # --------------------------------------------------------
 
     waf_configuration = optional(object({
       enabled                  = optional(bool, true)
@@ -510,23 +559,43 @@ variable "application_gateways" {
       max_request_body_size_kb = optional(number, 128)
     }), null)
 
+    # --------------------------------------------------------
+    # NETWORK REFERENCES
+    # --------------------------------------------------------
+
     vnet_key   = string
     subnet_key = string
 
     public_ip_key = string
 
+    # --------------------------------------------------------
+    # GATEWAY IP
+    # --------------------------------------------------------
+
     gateway_ip_configuration = object({
       name = string
     })
+
+    # --------------------------------------------------------
+    # FRONTEND IP
+    # --------------------------------------------------------
 
     frontend_ip_configuration = object({
       name = string
     })
 
+    # --------------------------------------------------------
+    # FRONTEND PORT
+    # --------------------------------------------------------
+
     frontend_port = object({
       name = string
       port = number
     })
+
+    # --------------------------------------------------------
+    # HTTP LISTENER
+    # --------------------------------------------------------
 
     http_listener = object({
       name                           = string
@@ -535,39 +604,74 @@ variable "application_gateways" {
       protocol                       = string
     })
 
-    request_routing_rule = object({
-      name                       = string
-      rule_type                  = string
-      http_listener_name         = string
-      backend_address_pool_name  = string
-      backend_http_settings_name = string
-    })
+    # --------------------------------------------------------
+    # BACKEND ADDRESS POOLS
+    # --------------------------------------------------------
 
-    backend_address_pool = object({
-      name         = string
+    backend_address_pools = map(object({
       ip_addresses = optional(list(string), [])
-    })
+    }))
 
-    health_probe = object({
+    # --------------------------------------------------------
+    # HEALTH PROBES
+    # --------------------------------------------------------
+
+    health_probes = map(object({
       name                = string
-      protocol            = optional(string, "Http")
+      protocol            = string
       port                = number
-      path                = optional(string, "/")
-      interval            = optional(number, 30)
-      timeout             = optional(number, 30)
-      unhealthy_threshold = optional(number, 3)
-    })
+      path                = string
+      interval            = number
+      timeout             = number
+      unhealthy_threshold = number
+    }))
 
-    backend_http_settings = object({
+    # --------------------------------------------------------
+    # BACKEND HTTP SETTINGS
+    # --------------------------------------------------------
+
+    backend_http_settings = map(object({
       name                  = string
       cookie_based_affinity = string
       port                  = number
       protocol              = string
       request_timeout       = number
+      probe_name            = string
+    }))
+
+    # --------------------------------------------------------
+    # REQUEST ROUTING
+    # --------------------------------------------------------
+
+    request_routing_rule = object({
+      name               = string
+      priority           = number
+      rule_type          = string
+      http_listener_name = string
+
+      url_path_map_name = string
+
+      default_backend_address_pool_name  = string
+      default_backend_http_settings_name = string
+
+      path_rules = list(object({
+        name                       = string
+        paths                      = list(string)
+        backend_address_pool_name  = string
+        backend_http_settings_name = string
+      }))
     })
+
+    # --------------------------------------------------------
+    # TAGS
+    # --------------------------------------------------------
 
     tags = optional(map(string), {})
   }))
+
+  # ==========================================================
+  # BASIC VALIDATION
+  # ==========================================================
 
   validation {
     condition = alltrue([
@@ -580,21 +684,121 @@ variable "application_gateways" {
       length(trimspace(gateway.public_ip_key)) > 0
     ])
 
-    error_message = "Each Application Gateway must define valid resource, network, subnet, and public IP references."
+    error_message = "Each Application Gateway must define valid resource, VNet, subnet, and public IP references."
   }
+
+  # ==========================================================
+  # SKU VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for key, gateway in var.application_gateways :
+      contains(
+        ["Standard_v2", "WAF_v2"],
+        gateway.sku.name
+      ) &&
+      contains(
+        ["Standard_v2", "WAF_v2"],
+        gateway.sku.tier
+      ) &&
+      gateway.sku.capacity >= 1 &&
+      gateway.sku.capacity <= 125
+    ])
+
+    error_message = "Application Gateway must use Standard_v2 or WAF_v2 with capacity between 1 and 125."
+  }
+
+  # ==========================================================
+  # WAF VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for key, gateway in var.application_gateways :
+      gateway.waf_configuration == null ||
+      (
+        contains(
+          ["Detection", "Prevention"],
+          gateway.waf_configuration.firewall_mode
+        ) &&
+        gateway.waf_configuration.rule_set_type == "OWASP" &&
+        gateway.waf_configuration.file_upload_limit_mb >= 1 &&
+        gateway.waf_configuration.file_upload_limit_mb <= 750 &&
+        gateway.waf_configuration.max_request_body_size_kb >= 8 &&
+        gateway.waf_configuration.max_request_body_size_kb <= 128
+      )
+    ])
+
+    error_message = "WAF configuration must use OWASP rules, Detection or Prevention mode, valid upload limits, and valid request body size."
+  }
+
+  # ==========================================================
+  # FRONTEND PORT VALIDATION
+  # ==========================================================
 
   validation {
     condition = alltrue([
       for key, gateway in var.application_gateways :
       gateway.frontend_port.port >= 1 &&
-      gateway.frontend_port.port <= 65535 &&
-      gateway.health_probe.port >= 1 &&
-      gateway.health_probe.port <= 65535 &&
-      gateway.backend_http_settings.port >= 1 &&
-      gateway.backend_http_settings.port <= 65535
+      gateway.frontend_port.port <= 65535
     ])
 
-    error_message = "Application Gateway ports must be between 1 and 65535."
+    error_message = "Application Gateway frontend port must be between 1 and 65535."
+  }
+
+  # ==========================================================
+  # HEALTH PROBE VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for gateway_key, gateway in var.application_gateways :
+      alltrue([
+        for probe_key, probe in gateway.health_probes :
+        probe.port >= 1 &&
+        probe.port <= 65535 &&
+        probe.interval >= 1 &&
+        probe.timeout >= 1 &&
+        probe.unhealthy_threshold >= 1
+      ])
+    ])
+
+    error_message = "Application Gateway health probes must contain valid port, interval, timeout, and unhealthy threshold values."
+  }
+
+  # ==========================================================
+  # BACKEND HTTP SETTINGS VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for gateway_key, gateway in var.application_gateways :
+      alltrue([
+        for settings_key, settings in gateway.backend_http_settings :
+        settings.port >= 1 &&
+        settings.port <= 65535 &&
+        settings.request_timeout >= 1 &&
+        settings.request_timeout <= 86400
+      ])
+    ])
+
+    error_message = "Application Gateway backend settings must contain valid port and request timeout values."
+  }
+
+  # ==========================================================
+  # ROUTING VALIDATION
+  # ==========================================================
+
+  validation {
+    condition = alltrue([
+      for key, gateway in var.application_gateways :
+      gateway.request_routing_rule.rule_type == "PathBasedRouting" &&
+      gateway.request_routing_rule.priority >= 1 &&
+      gateway.request_routing_rule.priority <= 20000
+    ])
+
+    error_message = "Application Gateway must use PathBasedRouting and routing priority must be between 1 and 20000."
   }
 }
 
