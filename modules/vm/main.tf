@@ -1,140 +1,238 @@
-# Resource: azurerm_linux_virtual_machine
-# Description: Creates the Linux virtual machines used in the frontend or backend tier.
-# ## Arguments Reference
-# - name: (Required) VM name.
-# - resource_group_name: (Required) The resource group of the VM.
-# - location: (Required) Azure region.
-# - size: (Required) VM size, such as Standard_F1als_v7.
-# - admin_username: (Required) Administrative username for the VM.
-# - admin_password: (Required) Administrative password for the VM.
-# - network_interface_ids: (Required) NICs attached to the VM.
-# - os_disk: (Required) OS disk configuration.
-# - source_image_reference: (Required) Marketplace image reference.
-# - custom_data: (Optional) Cloud-init or bootstrap script.
-# - tags: (Optional) Resource tags.
-
+# ============================================================
+# LINUX VIRTUAL MACHINES
+# ============================================================
 
 resource "azurerm_linux_virtual_machine" "this" {
-  for_each = var.linux_virtual_machines
+  for_each = {
+    for vm_key, vm in var.virtual_machines :
+    vm_key => vm
+    if vm.os_type == "Linux"
+  }
 
-  name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-  location            = each.value.location
-  size                = each.value.size
+  name = each.value.name
+
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
+
+  size = each.value.size
 
   admin_username = each.value.admin_username
 
-  admin_password = (
-    each.value.admin_ssh_key != null &&
-    length(trimspace(each.value.admin_ssh_key)) > 0
-  ) ? null : each.value.admin_password
+  disable_password_authentication = true
 
-  disable_password_authentication = (
-    each.value.admin_ssh_key != null &&
-    length(trimspace(each.value.admin_ssh_key)) > 0
-  )
+  admin_ssh_key {
+    username = each.value.admin_username
+
+    public_key = each.value.admin_ssh_key
+  }
 
   network_interface_ids = [
-    each.value.network_interface_id
+    var.network_interfaces[
+      each.value.nic_key
+    ].id
   ]
 
-  custom_data = (
-    each.value.custom_data != null &&
-    length(trimspace(each.value.custom_data)) > 0
-  ) ? base64encode(each.value.custom_data) : null
-
-  dynamic "admin_ssh_key" {
-    for_each = (
-      each.value.admin_ssh_key != null &&
-      length(trimspace(each.value.admin_ssh_key)) > 0
-    ) ? [each.value.admin_ssh_key] : []
-
-    content {
-      username   = each.value.admin_username
-      public_key = admin_ssh_key.value
-    }
-  }
-
-  dynamic "identity" {
-    for_each = (
-      each.value.identity_type != null
-    ) ? [each.value.identity_type] : []
-
-    content {
-      type = identity.value
-    }
-  }
-
-  # Azure-managed boot diagnostics.
-  # No dedicated boot-diagnostics storage account is required.
-  boot_diagnostics {}
-
-  os_disk {
-    caching              = each.value.os_disk.caching
-    storage_account_type = each.value.os_disk.storage_account_type
-  }
+  # ----------------------------------------------------------
+  # SOURCE IMAGE
+  # ----------------------------------------------------------
 
   source_image_reference {
     publisher = each.value.source_image_reference.publisher
-    offer     = each.value.source_image_reference.offer
-    sku       = each.value.source_image_reference.sku
-    version   = each.value.source_image_reference.version
+
+    offer = each.value.source_image_reference.offer
+
+    sku = each.value.source_image_reference.sku
+
+    version = each.value.source_image_reference.version
   }
 
-  tags = merge(
-    var.tags,
-    each.value.tags
+  # ----------------------------------------------------------
+  # OS DISK
+  #
+  # security_encryption_type intentionally omitted.
+  #
+  # This prevents Terraform from forcing:
+  # DiskWithVMGuestState / Confidential VM settings
+  # on images that do not support them.
+  # ----------------------------------------------------------
+
+  os_disk {
+    caching = each.value.os_disk.caching
+
+    storage_account_type = (
+      each.value.os_disk.storage_account_type
+    )
+
+    disk_size_gb = each.value.os_disk.disk_size_gb
+  }
+
+  # ----------------------------------------------------------
+  # TRUSTED LAUNCH
+  # ----------------------------------------------------------
+
+  secure_boot_enabled = each.value.secure_boot_enabled
+
+  vtpm_enabled = each.value.vtpm_enabled
+
+  # ----------------------------------------------------------
+  # CUSTOM DATA
+  # ----------------------------------------------------------
+
+  custom_data = (
+    each.value.custom_data != null
+    ? base64encode(each.value.custom_data)
+    : null
   )
+
+  # ----------------------------------------------------------
+  # BOOT DIAGNOSTICS
+  # ----------------------------------------------------------
+
+  dynamic "boot_diagnostics" {
+    for_each = (
+      each.value.boot_diagnostics.enabled
+      ? [1]
+      : []
+    )
+
+    content {}
+  }
+
+  # ----------------------------------------------------------
+  # SYSTEM-ASSIGNED MANAGED IDENTITY
+  # ----------------------------------------------------------
+
+  dynamic "identity" {
+    for_each = (
+      each.value.enable_system_assigned_identity
+      ? [1]
+      : []
+    )
+
+    content {
+      type = "SystemAssigned"
+    }
+  }
+
+  tags = var.tags
 }
 
 
-resource "azurerm_windows_virtual_machine" "this" {
-  for_each = var.windows_virtual_machines
+# ============================================================
+# WINDOWS VIRTUAL MACHINES
+# ============================================================
 
-  name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-  location            = each.value.location
-  size                = each.value.size
+resource "azurerm_windows_virtual_machine" "this" {
+  for_each = {
+    for vm_key, vm in var.virtual_machines :
+    vm_key => vm
+    if vm.os_type == "Windows"
+  }
+
+  name = each.value.name
+
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
+
+  size = each.value.size
 
   admin_username = each.value.admin_username
+
   admin_password = each.value.admin_password
 
   network_interface_ids = [
-    each.value.network_interface_id
+    var.network_interfaces[
+      each.value.nic_key
+    ].id
   ]
 
-  custom_data = (
-    each.value.custom_data != null &&
-    length(trimspace(each.value.custom_data)) > 0
-  ) ? base64encode(each.value.custom_data) : null
-
-  dynamic "identity" {
-    for_each = (
-      each.value.identity_type != null
-    ) ? [each.value.identity_type] : []
-
-    content {
-      type = identity.value
-    }
-  }
-
-  # Azure-managed boot diagnostics.
-  boot_diagnostics {}
-
-  os_disk {
-    caching              = each.value.os_disk.caching
-    storage_account_type = each.value.os_disk.storage_account_type
-  }
+  # ----------------------------------------------------------
+  # SOURCE IMAGE
+  # ----------------------------------------------------------
 
   source_image_reference {
     publisher = each.value.source_image_reference.publisher
-    offer     = each.value.source_image_reference.offer
-    sku       = each.value.source_image_reference.sku
-    version   = each.value.source_image_reference.version
+
+    offer = each.value.source_image_reference.offer
+
+    sku = each.value.source_image_reference.sku
+
+    version = each.value.source_image_reference.version
   }
 
-  tags = merge(
-    var.tags,
-    each.value.tags
+  # ----------------------------------------------------------
+  # OS DISK
+  #
+  # security_encryption_type intentionally omitted.
+  # ----------------------------------------------------------
+
+  os_disk {
+    caching = each.value.os_disk.caching
+
+    storage_account_type = (
+      each.value.os_disk.storage_account_type
+    )
+
+    disk_size_gb = each.value.os_disk.disk_size_gb
+  }
+
+  # ----------------------------------------------------------
+  # TRUSTED LAUNCH
+  # ----------------------------------------------------------
+
+  secure_boot_enabled = each.value.secure_boot_enabled
+
+  vtpm_enabled = each.value.vtpm_enabled
+
+  # ----------------------------------------------------------
+  # CUSTOM DATA
+  # ----------------------------------------------------------
+
+  custom_data = (
+    each.value.custom_data != null
+    ? base64encode(each.value.custom_data)
+    : null
   )
+
+  # ----------------------------------------------------------
+  # BOOT DIAGNOSTICS
+  # ----------------------------------------------------------
+
+  dynamic "boot_diagnostics" {
+    for_each = (
+      each.value.boot_diagnostics.enabled
+      ? [1]
+      : []
+    )
+
+    content {}
+  }
+
+  # ----------------------------------------------------------
+  # SYSTEM-ASSIGNED MANAGED IDENTITY
+  # ----------------------------------------------------------
+
+  dynamic "identity" {
+    for_each = (
+      each.value.enable_system_assigned_identity
+      ? [1]
+      : []
+    )
+
+    content {
+      type = "SystemAssigned"
+    }
+  }
+
+  tags = var.tags
 }
