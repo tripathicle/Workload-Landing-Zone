@@ -1,1150 +1,1039 @@
-variable "location" {
-  description = "Azure region for all resources in the environment."
+# ============================================================
+# ENVIRONMENT
+# ============================================================
+
+variable "environment" {
+  description = "Deployment environment."
 
   type = string
 
   validation {
     condition = contains(
       [
-        "japaneast",
-        "eastus",
-        "eastus2",
-        "centralus",
-        "westeurope",
-        "uksouth"
+        "dev",
+        "stage",
+        "prod"
       ],
-      lower(var.location)
+      var.environment
     )
 
-    error_message = "location must be a supported Azure region."
+    error_message = "Environment must be one of: dev, stage, prod."
   }
 }
 
-variable "environment" {
-  description = "Deployment environment name."
 
-  type = string
-
-  validation {
-    condition = contains(
-      ["dev", "stage", "prod"],
-      lower(var.environment)
-    )
-
-    error_message = "environment must be one of: dev, stage, or prod."
-  }
-}
+# ============================================================
+# COMMON TAGS
+# ============================================================
 
 variable "tags" {
-  description = "Default tags applied to all resources."
+  description = "Common tags applied to all resources."
 
   type    = map(string)
   default = {}
-
-  validation {
-    condition = alltrue([
-      for key, value in var.tags :
-      length(trimspace(key)) > 0 &&
-      length(trimspace(value)) > 0
-    ])
-
-    error_message = "Each tag key and value must be non-empty."
-  }
 }
 
 
-
+# ============================================================
 # RESOURCE GROUPS
+# ============================================================
+
 variable "resource_groups" {
-  description = "Resource groups for the workload environment."
+  description = "Resource Groups to create."
 
   type = map(object({
     name     = string
     location = string
-    tags     = optional(map(string), {})
   }))
 
   validation {
+    condition = length(var.resource_groups) > 0
+
+    error_message = "At least one Resource Group must be defined."
+  }
+
+  validation {
     condition = alltrue([
-      for key, rg in var.resource_groups :
-      length(trimspace(rg.name)) > 0 &&
-      length(trimspace(rg.location)) > 0
+      for key, resource_group in var.resource_groups :
+      length(trimspace(resource_group.name)) > 0
     ])
 
-    error_message = "Each resource group must define a non-empty name and location."
+    error_message = "Each Resource Group must define a non-empty name."
   }
 }
 
 
+# ============================================================
 # STORAGE ACCOUNTS
+# ============================================================
+
 variable "storage_accounts" {
-  description = "Storage account definitions for the workload environment."
+  description = "Storage Account configuration."
 
   type = map(object({
-    name                            = string
-    resource_group_name             = string
-    account_tier                    = optional(string, "Standard")
-    account_replication_type        = optional(string, "LRS")
-    min_tls_version                 = optional(string, "TLS1_2")
-    allow_nested_items_to_be_public = optional(bool, false)
-    public_network_access_enabled   = optional(bool, true)
-    tags                            = optional(map(string), {})
+    name               = string
+    resource_group_key = string
+
+    account_tier             = optional(string, "Standard")
+    account_replication_type = optional(string, "LRS")
+
+    min_tls_version = optional(
+      string,
+      "TLS1_2"
+    )
+
+    allow_nested_items_to_be_public = optional(
+      bool,
+      false
+    )
+
+    public_network_access_enabled = optional(
+      bool,
+      false
+    )
+
+    cross_tenant_replication_enabled = optional(
+      bool,
+      false
+    )
   }))
 
   validation {
-    condition = alltrue([
-      for key, storage in var.storage_accounts :
-      length(storage.name) >= 3 &&
-      length(storage.name) <= 24 &&
-      can(regex("^[a-z0-9]+$", storage.name))
-    ])
+    condition = length(var.storage_accounts) > 0
 
-    error_message = "Storage account names must be 3-24 characters and contain only lowercase letters and numbers."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, storage in var.storage_accounts :
-      contains(
-        ["Standard", "Premium"],
-        storage.account_tier
-      )
-    ])
-
-    error_message = "account_tier must be either Standard or Premium."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, storage in var.storage_accounts :
-      contains(
-        ["LRS", "GRS", "RAGRS", "ZRS", "GZRS", "RAGZRS"],
-        storage.account_replication_type
-      )
-    ])
-
-    error_message = "account_replication_type must be a supported Azure replication type."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, storage in var.storage_accounts :
-      contains(
-        ["TLS1_2", "TLS1_3"],
-        storage.min_tls_version
-      )
-    ])
-
-    error_message = "min_tls_version must be TLS1_2 or TLS1_3."
+    error_message = "At least one Storage Account must be defined."
   }
 }
+
+
+# ============================================================
+# VIRTUAL NETWORKS
+# ============================================================
 
 variable "vnets" {
-  description = "Map of VNets for the hub-spoke landing zone. Each VNet must use RFC1918 private address space and valid subnet ranges."
+  description = "Virtual Network configuration."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    address_space       = list(string)
-
-    subnets = map(object({
-      name                                          = string
-      address_prefixes                              = list(string)
-      service_endpoints                             = optional(list(string), [])
-      private_endpoint_network_policies             = optional(string, "Disabled")
-      private_link_service_network_policies_enabled = optional(bool, true)
-    }))
-
-    tags = optional(map(string), {})
+    name               = string
+    resource_group_key = string
+    address_space      = list(string)
   }))
+
+  validation {
+    condition = length(var.vnets) > 0
+
+    error_message = "At least one Virtual Network must be defined."
+  }
 
   validation {
     condition = alltrue([
       for key, vnet in var.vnets :
-      length(vnet.address_space) > 0 &&
-      alltrue([
-        for cidr in vnet.address_space :
-        can(cidrhost(cidr, 0))
-      ]) &&
-      length(vnet.subnets) > 0
+      length(vnet.address_space) > 0
     ])
 
-    error_message = "Each VNet must define at least one valid private CIDR and at least one subnet."
-  }
-
-  validation {
-    condition = alltrue([
-      for vnet_key, vnet in var.vnets :
-      alltrue([
-        for subnet_key, subnet in vnet.subnets :
-        length(trimspace(subnet.name)) > 0 &&
-        length(subnet.address_prefixes) > 0 &&
-        alltrue([
-          for cidr in subnet.address_prefixes :
-          can(cidrhost(cidr, 0))
-        ])
-      ])
-    ])
-
-    error_message = "Each subnet must define a non-empty name and at least one valid CIDR address prefix."
-  }
-
-  validation {
-    condition = alltrue([
-      for vnet_key, vnet in var.vnets :
-      alltrue([
-        for subnet_key, subnet in vnet.subnets :
-        contains(
-          [
-            "Disabled",
-            "Enabled",
-            "NetworkSecurityGroupEnabled",
-            "RouteTableEnabled"
-          ],
-          subnet.private_endpoint_network_policies
-        )
-      ])
-    ])
-
-    error_message = "private_endpoint_network_policies must be Disabled, Enabled, NetworkSecurityGroupEnabled, or RouteTableEnabled."
+    error_message = "Each VNet must define at least one address space."
   }
 }
+
+
+# ============================================================
+# SUBNETS
+# ============================================================
+
+variable "subnets" {
+  description = "Subnet configuration."
+
+  type = map(object({
+    name     = string
+    vnet_key = string
+
+    address_prefixes = list(string)
+
+    private_endpoint_network_policies = optional(
+      string,
+      "Disabled"
+    )
+
+    private_link_service_network_policies_enabled = optional(
+      bool,
+      true
+    )
+  }))
+
+  validation {
+    condition = length(var.subnets) > 0
+
+    error_message = "At least one subnet must be defined."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, subnet in var.subnets :
+      length(subnet.address_prefixes) > 0
+    ])
+
+    error_message = "Each subnet must define at least one address prefix."
+  }
+}
+
+
+# ============================================================
+# VNET PEERING
+# ============================================================
+
+variable "vnet_peerings" {
+  description = "Azure Virtual Network Peering configuration."
+
+  type = map(object({
+    name            = string
+    source_vnet_key = string
+    remote_vnet_key = string
+
+    allow_virtual_network_access = optional(
+      bool,
+      true
+    )
+
+    allow_forwarded_traffic = optional(
+      bool,
+      true
+    )
+
+    allow_gateway_transit = optional(
+      bool,
+      false
+    )
+
+    use_remote_gateways = optional(
+      bool,
+      false
+    )
+  }))
+
+  validation {
+    condition = length(var.vnet_peerings) > 0
+
+    error_message = "At least one VNet peering must be defined."
+  }
+}
+
+
+# ============================================================
+# PUBLIC IP ADDRESSES
+# ============================================================
 
 variable "public_ips" {
-  description = "Public IPs used for ingress and administrative access."
+  description = "Public IP configuration."
+
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    sku                 = optional(string, "Standard")
-    allocation_method   = optional(string, "Static")
-    zones               = optional(list(string), [])
-    tags                = optional(map(string), {})
+    name               = string
+    resource_group_key = string
+
+    allocation_method = optional(
+      string,
+      "Static"
+    )
+
+    sku = optional(
+      string,
+      "Standard"
+    )
   }))
+
+  validation {
+    condition = length(var.public_ips) > 0
+
+    error_message = "At least one Public IP must be defined."
+  }
 }
 
-# variable "firewalls" {
-#   description = "Azure Firewall in the hub"
-#   type = map(object({
-#     name                = string
-#     resource_group_name = string
-#     location            = string
-#     sku_name            = optional(string, "AZFW_VNet")
-#     sku_tier            = optional(string, "Standard")
-#     firewall_policy_id  = optional(string, null)
-#     subnet_id           = string
-#     public_ip_id        = string
-#     tags                = optional(map(string), {})
-#   }))
-# }
 
-variable "load_balancers" {
-  description = "Internal Load Balancer configuration for the environment."
+# ============================================================
+# NETWORK SECURITY GROUPS
+# ============================================================
+
+variable "network_security_groups" {
+  description = "Network Security Group configuration."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    sku                 = string
+    name               = string
+    resource_group_key = string
 
-    vnet_key   = string
+    security_rules = map(object({
+      name                         = string
+      priority                     = number
+      direction                    = string
+      access                       = string
+      protocol                     = string
+      source_port_range            = optional(string, "*")
+      destination_port_range       = optional(string, "*")
+      source_address_prefix        = optional(string)
+      destination_address_prefix   = optional(string)
+      source_address_prefixes      = optional(list(string))
+      destination_address_prefixes = optional(list(string))
+      description                  = optional(string)
+    }))
+  }))
+
+  validation {
+    condition = length(var.network_security_groups) > 0
+
+    error_message = "At least one Network Security Group must be defined."
+  }
+}
+
+
+# ============================================================
+# NSG ASSOCIATIONS
+# ============================================================
+
+variable "nsg_associations" {
+  description = "Subnet to NSG associations."
+
+  type = map(object({
     subnet_key = string
+    nsg_key    = string
+  }))
 
-    frontend_ip_configuration = object({
-      name               = string
-      private_ip_address = string
+  validation {
+    condition = length(var.nsg_associations) > 0
+
+    error_message = "At least one NSG association must be defined."
+  }
+}
+
+
+# ============================================================
+# ROUTE TABLES
+# ============================================================
+
+variable "route_tables" {
+  description = "Route table configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+
+    routes = optional(map(object({
+      name                   = string
+      address_prefix         = string
+      next_hop_type          = string
+      next_hop_in_ip_address = optional(string)
+    })), {})
+  }))
+
+  default = {}
+}
+
+
+# ============================================================
+# ROUTE TABLE ASSOCIATIONS
+# ============================================================
+
+variable "route_table_associations" {
+  description = "Subnet to route table associations."
+
+  type = map(object({
+    subnet_key      = string
+    route_table_key = string
+  }))
+
+  default = {}
+}
+
+
+# ============================================================
+# NETWORK INTERFACES
+# ============================================================
+
+variable "network_interfaces" {
+  description = "Network Interface configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
+
+    ip_configuration = object({
+      name                          = string
+      private_ip_address_allocation = string
+      private_ip_address            = optional(string)
+      public_ip_key                 = optional(string)
     })
 
-    backend_address_pool = object({
-      name = string
+    backend_pool_key = optional(string)
+  }))
+
+  validation {
+    condition = length(var.network_interfaces) > 0
+
+    error_message = "At least one Network Interface must be defined."
+  }
+}
+
+
+# ============================================================
+# VIRTUAL MACHINES
+# ============================================================
+# ============================================================
+# SSH PUBLIC KEY
+# ============================================================
+
+variable "admin_ssh_public_key" {
+  description = "SSH public key used for Linux Virtual Machine administration."
+
+  type      = string
+  sensitive = true
+
+  validation {
+    condition = (
+      length(trimspace(var.admin_ssh_public_key)) > 0 &&
+      (
+        startswith(trimspace(var.admin_ssh_public_key), "ssh-rsa") ||
+        startswith(trimspace(var.admin_ssh_public_key), "ssh-ed25519") ||
+        startswith(trimspace(var.admin_ssh_public_key), "ecdsa-sha2-")
+      )
+    )
+
+    error_message = "admin_ssh_public_key must be a valid SSH public key."
+  }
+}
+
+
+# ============================================================
+# VIRTUAL MACHINES
+# ============================================================
+
+variable "virtual_machines" {
+  description = "Map of Linux and Windows Virtual Machines to provision."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    nic_key            = string
+
+    os_type = string
+    size    = string
+
+    admin_username = string
+
+    admin_ssh_key  = optional(string)
+    admin_password = optional(string)
+
+    source_image_reference = object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = string
     })
+
+    os_disk = optional(object({
+      caching              = optional(string, "ReadWrite")
+      storage_account_type = optional(string, "Premium_LRS")
+      disk_size_gb         = optional(number, 30)
+    }), {})
+
+    custom_data = optional(string)
+
+    enable_system_assigned_identity = optional(bool, true)
+
+    secure_boot_enabled = optional(bool, true)
+
+    vtpm_enabled = optional(bool, true)
+
+    boot_diagnostics = optional(object({
+      enabled = optional(bool, true)
+    }), {})
+  }))
+
+  validation {
+    condition = length(var.virtual_machines) > 0
+
+    error_message = "At least one Virtual Machine must be defined."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      contains(["Linux", "Windows"], vm.os_type)
+    ])
+
+    error_message = "Virtual Machine os_type must be either Linux or Windows."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      length(trimspace(vm.name)) > 0
+    ])
+
+    error_message = "Each Virtual Machine must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      length(trimspace(vm.admin_username)) > 0
+    ])
+
+    error_message = "Each Virtual Machine must define a non-empty admin username."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      contains(
+        [
+          "ReadOnly",
+          "ReadWrite",
+          "None"
+        ],
+        vm.os_disk.caching
+      )
+    ])
+
+    error_message = "OS disk caching must be ReadOnly, ReadWrite, or None."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      contains(
+        [
+          "Standard_LRS",
+          "StandardSSD_LRS",
+          "Premium_LRS",
+          "StandardSSD_ZRS",
+          "Premium_ZRS"
+        ],
+        vm.os_disk.storage_account_type
+      )
+    ])
+
+    error_message = "Unsupported OS disk storage account type."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      vm.os_disk.disk_size_gb >= 30
+    ])
+
+    error_message = "OS disk size must be at least 30 GB."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      vm.os_type != "Windows" || vm.admin_password != null
+    ])
+
+    error_message = "Windows Virtual Machines must define an administrator password."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      vm.os_type != "Linux" || vm.admin_password == null
+    ])
+
+    error_message = "Linux Virtual Machines must use SSH authentication and must not define an admin password."
+  }
+
+  validation {
+    condition = alltrue([
+      for vm_key, vm in var.virtual_machines :
+      vm.os_type != "Windows" || vm.admin_ssh_key == null
+    ])
+
+    error_message = "Windows Virtual Machines should not define an SSH public key."
+  }
+}
+
+
+
+
+
+
+
+# ============================================================
+# INTERNAL LOAD BALANCERS
+# ============================================================
+
+variable "load_balancers" {
+  description = "Internal Load Balancer configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
+
+    frontend_ip_configuration_name = string
+    private_ip_address             = string
+
+    sku = optional(
+      string,
+      "Standard"
+    )
+
+    backend_pool_name = string
 
     health_probe = object({
       name                = string
       protocol            = string
       port                = number
-      request_path        = string
-      interval_in_seconds = number
-      number_of_probes    = number
+      request_path        = optional(string)
+      interval_in_seconds = optional(number, 5)
+      number_of_probes    = optional(number, 2)
     })
 
-    lb_rule = object({
+    load_balancing_rule = object({
       name                    = string
       protocol                = string
       frontend_port           = number
       backend_port            = number
-      enable_floating_ip      = bool
-      idle_timeout_in_minutes = number
-      enable_tcp_reset        = bool
+      idle_timeout_in_minutes = optional(number, 4)
     })
-
-    tags = optional(map(string), {})
   }))
 
   validation {
-    condition = alltrue([
-      for key, lb in var.load_balancers :
-      contains(["Basic", "Standard"], lb.sku)
-    ])
+    condition = length(var.load_balancers) > 0
 
-    error_message = "Load Balancer SKU must be either Basic or Standard."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, lb in var.load_balancers :
-      contains(["Tcp", "Udp"], lb.lb_rule.protocol)
-    ])
-
-    error_message = "Load Balancer rule protocol must be Tcp or Udp."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, lb in var.load_balancers :
-      contains(["Http", "Https", "Tcp"], lb.health_probe.protocol)
-    ])
-
-    error_message = "Health probe protocol must be Http, Https, or Tcp."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, lb in var.load_balancers :
-      lb.frontend_ip_configuration.private_ip_address != ""
-    ])
-
-    error_message = "Every Load Balancer must have a private frontend IP address."
-  }
-}
-
-variable "key_vaults" {
-  description = "Key Vault definitions for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    tenant_id           = string
-
-    sku_name = optional(string, "standard")
-
-    purge_protection_enabled = optional(bool, true)
-
-    soft_delete_retention_days = optional(number, 90)
-
-    enable_rbac_authorization = optional(bool, true)
-
-    public_network_access_enabled = optional(bool, false)
-
-    tags = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, kv in var.key_vaults :
-      length(trimspace(kv.name)) > 0 &&
-      length(trimspace(kv.resource_group_name)) > 0 &&
-      length(trimspace(kv.location)) > 0 &&
-      length(trimspace(kv.tenant_id)) > 0
-    ])
-
-    error_message = "Each Key Vault must define a non-empty name, resource group name, location, and tenant ID."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, kv in var.key_vaults :
-      contains(
-        ["standard", "premium"],
-        lower(kv.sku_name)
-      )
-    ])
-
-    error_message = "Key Vault sku_name must be either standard or premium."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, kv in var.key_vaults :
-      kv.soft_delete_retention_days >= 7 &&
-      kv.soft_delete_retention_days <= 90
-    ])
-
-    error_message = "Key Vault soft delete retention must be between 7 and 90 days."
-  }
-}
-
-variable "network_security_groups" {
-  description = "Network Security Group definitions for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    security_rules = map(object({
-      name                       = string
-      priority                   = number
-      direction                  = string
-      access                     = string
-      protocol                   = string
-      source_port_range          = optional(string, "*")
-      destination_port_range     = optional(string, "*")
-      source_address_prefix      = optional(string, "*")
-      destination_address_prefix = optional(string, "*")
-    }))
-
-    tags = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, nsg in var.network_security_groups :
-      length(trimspace(nsg.name)) > 0 &&
-      length(trimspace(nsg.resource_group_name)) > 0 &&
-      length(trimspace(nsg.location)) > 0
-    ])
-
-    error_message = "Each NSG must define a non-empty name, resource group name, and location."
-  }
-
-  validation {
-    condition = alltrue([
-      for nsg_key, nsg in var.network_security_groups :
-      alltrue([
-        for rule_key, rule in nsg.security_rules :
-        rule.priority >= 100 &&
-        rule.priority <= 4096 &&
-        contains(["Inbound", "Outbound"], rule.direction) &&
-        contains(["Allow", "Deny"], rule.access) &&
-        contains(
-          ["Tcp", "Udp", "Icmp", "Esp", "Ah", "*"],
-          rule.protocol
-        )
-      ])
-    ])
-
-    error_message = "Each NSG rule must have a priority between 100 and 4096, valid direction, access, and protocol."
-  }
-
-  validation {
-    condition = alltrue([
-      for nsg_key, nsg in var.network_security_groups :
-      length([
-        for rule_key, rule in nsg.security_rules :
-        rule.priority
-        ]) == length(distinct([
-          for rule_key, rule in nsg.security_rules :
-          rule.priority
-      ]))
-    ])
-
-    error_message = "Security rule priorities must be unique within each NSG."
-  }
-}
-
-variable "log_analytics_workspaces" {
-  description = "Log Analytics workspace definitions for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    sku               = optional(string, "PerGB2018")
-    retention_in_days = optional(number, 30)
-
-    tags = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, workspace in var.log_analytics_workspaces :
-      length(trimspace(workspace.name)) > 0 &&
-      length(trimspace(workspace.resource_group_name)) > 0 &&
-      length(trimspace(workspace.location)) > 0
-    ])
-
-    error_message = "Each Log Analytics workspace must define a non-empty name, resource group name, and location."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, workspace in var.log_analytics_workspaces :
-      workspace.retention_in_days >= 30 &&
-      workspace.retention_in_days <= 730
-    ])
-
-    error_message = "Log Analytics retention must be between 30 and 730 days."
-  }
-}
-
-variable "application_insights" {
-  description = "Application Insights definitions for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    workspace_key = string
-
-    application_type = optional(string, "web")
-
-    tags = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, appi in var.application_insights :
-      length(trimspace(appi.name)) > 0 &&
-      length(trimspace(appi.resource_group_name)) > 0 &&
-      length(trimspace(appi.location)) > 0 &&
-      length(trimspace(appi.workspace_key)) > 0
-    ])
-
-    error_message = "Each Application Insights resource must define a non-empty name, resource group name, location, and Log Analytics workspace key."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, appi in var.application_insights :
-      contains(
-        ["web", "other"],
-        lower(appi.application_type)
-      )
-    ])
-
-    error_message = "Application Insights application_type must be either web or other."
+    error_message = "At least one Load Balancer must be defined."
   }
 }
 
 
-# APPLICATION GATEWAYS
 # ============================================================
 # APPLICATION GATEWAYS
 # ============================================================
 
 variable "application_gateways" {
-  description = "Application Gateway definitions for workload ingress."
+  description = "Application Gateway WAF configuration."
 
   type = map(object({
-
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    # --------------------------------------------------------
-    # SKU
-    # --------------------------------------------------------
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
+    public_ip_key      = string
 
     sku = object({
       name     = string
       tier     = string
-      capacity = number
+      capacity = optional(number)
     })
 
-    # --------------------------------------------------------
-    # WAF
-    # --------------------------------------------------------
+    frontend_ip_configuration_name = string
+    frontend_port_name             = string
+    frontend_port                  = number
 
-    waf_configuration = optional(object({
-      enabled                  = optional(bool, true)
-      firewall_mode            = optional(string, "Prevention")
-      rule_set_type            = optional(string, "OWASP")
-      rule_set_version         = optional(string, "3.2")
-      file_upload_limit_mb     = optional(number, 100)
-      request_body_check       = optional(bool, true)
-      max_request_body_size_kb = optional(number, 128)
+    gateway_ip_configuration_name = string
+
+    http_listener_name = string
+
+    waf_policy = optional(object({
+      enabled          = optional(bool, true)
+      firewall_mode    = optional(string, "Prevention")
+      rule_set_type    = optional(string, "OWASP")
+      rule_set_version = optional(string, "3.2")
     }), null)
 
-    # --------------------------------------------------------
-    # NETWORK REFERENCES
-    # --------------------------------------------------------
-
-    vnet_key   = string
-    subnet_key = string
-
-    public_ip_key = string
-
-    # --------------------------------------------------------
-    # GATEWAY IP
-    # --------------------------------------------------------
-
-    gateway_ip_configuration = object({
-      name = string
-    })
-
-    # --------------------------------------------------------
-    # FRONTEND IP
-    # --------------------------------------------------------
-
-    frontend_ip_configuration = object({
-      name = string
-    })
-
-    # --------------------------------------------------------
-    # FRONTEND PORT
-    # --------------------------------------------------------
-
-    frontend_port = object({
-      name = string
-      port = number
-    })
-
-    # --------------------------------------------------------
-    # HTTP LISTENER
-    # --------------------------------------------------------
-
-    http_listener = object({
-      name                           = string
-      frontend_ip_configuration_name = string
-      frontend_port_name             = string
-      protocol                       = string
-    })
-
-    # --------------------------------------------------------
-    # BACKEND ADDRESS POOLS
-    # --------------------------------------------------------
-
-    backend_address_pools = map(object({
-      ip_addresses = optional(list(string), [])
-    }))
-
-    # --------------------------------------------------------
-    # HEALTH PROBES
-    # --------------------------------------------------------
-
-    health_probes = map(object({
-      name                = string
-      protocol            = string
-      port                = number
-      path                = string
-      interval            = number
-      timeout             = number
-      unhealthy_threshold = number
-    }))
-
-    # --------------------------------------------------------
-    # BACKEND HTTP SETTINGS
-    # --------------------------------------------------------
-
-    backend_http_settings = map(object({
-      name                  = string
-      cookie_based_affinity = string
-      port                  = number
-      protocol              = string
-      request_timeout       = number
-      probe_name            = string
-    }))
-
-    # --------------------------------------------------------
-    # REQUEST ROUTING
-    # --------------------------------------------------------
-
-    request_routing_rule = object({
+    frontend_backend = object({
       name               = string
-      priority           = number
-      rule_type          = string
-      http_listener_name = string
-
-      url_path_map_name = string
-
-      default_backend_address_pool_name  = string
-      default_backend_http_settings_name = string
-
-      path_rules = list(object({
-        name                       = string
-        paths                      = list(string)
-        backend_address_pool_name  = string
-        backend_http_settings_name = string
-      }))
+      ip_addresses       = list(string)
+      http_settings_name = string
+      http_settings_port = number
+      probe_name         = string
+      probe_path         = string
     })
 
-    # --------------------------------------------------------
-    # TAGS
-    # --------------------------------------------------------
+    backend_backend = object({
+      name               = string
+      ip_addresses       = list(string)
+      http_settings_name = string
+      http_settings_port = number
+      probe_name         = string
+      probe_path         = string
+    })
 
-    tags = optional(map(string), {})
+    path_map_name = string
+
+    path_rules = list(object({
+      name                       = string
+      paths                      = list(string)
+      backend_address_pool_name  = string
+      backend_http_settings_name = string
+    }))
+
+    default_backend_address_pool_name  = string
+    default_backend_http_settings_name = string
+
+    request_routing_rule_name     = string
+    request_routing_rule_priority = number
   }))
 
-  # ==========================================================
-  # BASIC VALIDATION
-  # ==========================================================
-
   validation {
-    condition = alltrue([
-      for key, gateway in var.application_gateways :
-      length(trimspace(gateway.name)) > 0 &&
-      length(trimspace(gateway.resource_group_name)) > 0 &&
-      length(trimspace(gateway.location)) > 0 &&
-      length(trimspace(gateway.vnet_key)) > 0 &&
-      length(trimspace(gateway.subnet_key)) > 0 &&
-      length(trimspace(gateway.public_ip_key)) > 0
-    ])
+    condition = length(var.application_gateways) > 0
 
-    error_message = "Each Application Gateway must define valid resource, VNet, subnet, and public IP references."
+    error_message = "At least one Application Gateway must be defined."
   }
+}
 
-  # ==========================================================
-  # SKU VALIDATION
-  # ==========================================================
+
+# ============================================================
+# BASTION
+# ============================================================
+
+variable "bastions" {
+  description = "Azure Bastion configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
+    public_ip_key      = string
+
+    sku = optional(
+      string,
+      "Standard"
+    )
+
+    copy_paste_enabled = optional(
+      bool,
+      true
+    )
+
+    file_copy_enabled = optional(
+      bool,
+      true
+    )
+
+    ip_connect_enabled = optional(
+      bool,
+      true
+    )
+
+    shareable_link_enabled = optional(
+      bool,
+      false
+    )
+
+    tunneling_enabled = optional(
+      bool,
+      true
+    )
+  }))
 
   validation {
-    condition = alltrue([
-      for key, gateway in var.application_gateways :
-      contains(
-        ["Standard_v2", "WAF_v2"],
-        gateway.sku.name
-      ) &&
-      contains(
-        ["Standard_v2", "WAF_v2"],
-        gateway.sku.tier
-      ) &&
-      gateway.sku.capacity >= 1 &&
-      gateway.sku.capacity <= 125
-    ])
+    condition = length(var.bastions) > 0
 
-    error_message = "Application Gateway must use Standard_v2 or WAF_v2 with capacity between 1 and 125."
+    error_message = "At least one Bastion must be defined."
   }
+}
 
-  # ==========================================================
-  # WAF VALIDATION
-  # ==========================================================
+
+# ============================================================
+# AZURE SQL
+# ============================================================
+
+variable "sql_servers" {
+  description = "Azure SQL Server configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+
+    administrator_login = string
+
+    version = optional(
+      string,
+      "12.0"
+    )
+
+    minimum_tls_version = optional(
+      string,
+      "1.2"
+    )
+
+    public_network_access_enabled = optional(
+      bool,
+      false
+    )
+
+    database = optional(object({
+      name                 = string
+      sku_name             = string
+      max_size_gb          = optional(number)
+      zone_redundant       = optional(bool, false)
+      storage_account_type = optional(string, "Local")
+    }))
+  }))
 
   validation {
-    condition = alltrue([
-      for key, gateway in var.application_gateways :
-      gateway.waf_configuration == null ||
-      (
-        contains(
-          ["Detection", "Prevention"],
-          gateway.waf_configuration.firewall_mode
-        ) &&
-        gateway.waf_configuration.rule_set_type == "OWASP" &&
-        gateway.waf_configuration.file_upload_limit_mb >= 1 &&
-        gateway.waf_configuration.file_upload_limit_mb <= 750 &&
-        gateway.waf_configuration.max_request_body_size_kb >= 8 &&
-        gateway.waf_configuration.max_request_body_size_kb <= 128
+    condition = length(var.sql_servers) > 0
+
+    error_message = "At least one Azure SQL Server must be defined."
+  }
+}
+
+
+# ============================================================
+# AZURE SQL ADMIN PASSWORD
+# ============================================================
+
+variable "sql_admin_password" {
+  description = "Azure SQL administrator password."
+
+  type      = string
+  sensitive = true
+
+  validation {
+    condition = length(var.sql_admin_password) >= 8
+
+    error_message = "Azure SQL administrator password must be at least 8 characters."
+  }
+}
+
+
+# ============================================================
+# POSTGRESQL FLEXIBLE SERVER
+# ============================================================
+
+variable "postgresql_servers" {
+  description = "Azure PostgreSQL Flexible Server configuration."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+
+    administrator_login = string
+
+    version = optional(
+      string,
+      "16"
+    )
+
+    sku_name = optional(
+      string,
+      "B_Standard_B1ms"
+    )
+
+    storage_mb = optional(
+      number,
+      32768
+    )
+
+    backup_retention_days = optional(
+      number,
+      7
+    )
+
+    geo_redundant_backup_enabled = optional(
+      bool,
+      false
+    )
+
+    public_network_access_enabled = optional(
+      bool,
+      false
+    )
+
+    database = optional(object({
+      name = string
+
+      charset = optional(
+        string,
+        "UTF8"
       )
-    ])
 
-    error_message = "WAF configuration must use OWASP rules, Detection or Prevention mode, valid upload limits, and valid request body size."
-  }
+      collation = optional(
+        string,
+        "en_US.utf8"
+      )
+    }))
 
-  # ==========================================================
-  # FRONTEND PORT VALIDATION
-  # ==========================================================
-
-  validation {
-    condition = alltrue([
-      for key, gateway in var.application_gateways :
-      gateway.frontend_port.port >= 1 &&
-      gateway.frontend_port.port <= 65535
-    ])
-
-    error_message = "Application Gateway frontend port must be between 1 and 65535."
-  }
-
-  # ==========================================================
-  # HEALTH PROBE VALIDATION
-  # ==========================================================
-
-  validation {
-    condition = alltrue([
-      for gateway_key, gateway in var.application_gateways :
-      alltrue([
-        for probe_key, probe in gateway.health_probes :
-        probe.port >= 1 &&
-        probe.port <= 65535 &&
-        probe.interval >= 1 &&
-        probe.timeout >= 1 &&
-        probe.unhealthy_threshold >= 1
-      ])
-    ])
-
-    error_message = "Application Gateway health probes must contain valid port, interval, timeout, and unhealthy threshold values."
-  }
-
-  # ==========================================================
-  # BACKEND HTTP SETTINGS VALIDATION
-  # ==========================================================
-
-  validation {
-    condition = alltrue([
-      for gateway_key, gateway in var.application_gateways :
-      alltrue([
-        for settings_key, settings in gateway.backend_http_settings :
-        settings.port >= 1 &&
-        settings.port <= 65535 &&
-        settings.request_timeout >= 1 &&
-        settings.request_timeout <= 86400
-      ])
-    ])
-
-    error_message = "Application Gateway backend settings must contain valid port and request timeout values."
-  }
-
-  # ==========================================================
-  # ROUTING VALIDATION
-  # ==========================================================
-
-  validation {
-    condition = alltrue([
-      for key, gateway in var.application_gateways :
-      gateway.request_routing_rule.rule_type == "PathBasedRouting" &&
-      gateway.request_routing_rule.priority >= 1 &&
-      gateway.request_routing_rule.priority <= 20000
-    ])
-
-    error_message = "Application Gateway must use PathBasedRouting and routing priority must be between 1 and 20000."
-  }
-}
-
-variable "network_interfaces" {
-  description = "NIC definitions for VM attachments. Subnet relationships are resolved from the network module output by VNet/subnet key."
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    vnet_key            = string
-    subnet_key          = string
-    ip_configuration = object({
-      name                          = string
-      private_ip_address_allocation = string
-      private_ip_address            = optional(string, null)
-    })
-    tags = optional(map(string), {})
+    high_availability = optional(object({
+      mode                      = string
+      standby_availability_zone = optional(string)
+    }))
   }))
 
   validation {
-    condition = alltrue([
-      for key, nic in var.network_interfaces : length(trimspace(nic.name)) > 0 && contains(["Dynamic", "Static"], nic.ip_configuration.private_ip_address_allocation) && length(trimspace(nic.vnet_key)) > 0 && length(trimspace(nic.subnet_key)) > 0
-    ])
-    error_message = "NIC names must be non-empty, private IP allocation must be Dynamic or Static, and both VNet and subnet keys must be provided."
+    condition = length(var.postgresql_servers) > 0
+
+    error_message = "At least one PostgreSQL server must be defined."
   }
 }
 
-variable "linux_virtual_machines" {
-  description = "Linux workload virtual machines for the environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    size                = string
-
-    admin_username = string
-    admin_password = optional(string, null)
-    admin_ssh_key  = optional(string, null)
-
-    nic_key = string
-
-    custom_data = optional(string, null)
-
-    identity_type = optional(string, "SystemAssigned")
-
-    os_disk = object({
-      caching              = string
-      storage_account_type = string
-    })
-
-    source_image_reference = object({
-      publisher = string
-      offer     = string
-      sku       = string
-      version   = string
-    })
-
-    tags = optional(map(string), {})
-  }))
-
-  default = {}
-}
-
-
-variable "windows_virtual_machines" {
-  description = "Windows workload virtual machines for the environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    size                = string
-
-    admin_username = string
-    admin_password = string
-
-    nic_key = string
-
-    custom_data = optional(string, null)
-
-    identity_type = optional(string, "SystemAssigned")
-
-    os_disk = object({
-      caching              = string
-      storage_account_type = string
-    })
-
-    source_image_reference = object({
-      publisher = string
-      offer     = string
-      sku       = string
-      version   = string
-    })
-
-    tags = optional(map(string), {})
-  }))
-
-  default = {}
-}
 
 # ============================================================
-# SUBNET -> NSG ASSOCIATIONS
+# POSTGRESQL ADMIN PASSWORD
 # ============================================================
 
-variable "subnet_nsg_associations" {
-  description = "Map of subnet-to-NSG associations. References use logical keys exposed by the network and NSG modules."
+variable "postgresql_admin_password" {
+  description = "PostgreSQL administrator password."
 
-  type = map(object({
-    subnet_name                 = string
-    network_security_group_name = string
-  }))
+  type      = string
+  sensitive = true
 
   validation {
-    condition = alltrue([
-      for key, association in var.subnet_nsg_associations :
-      length(trimspace(association.subnet_name)) > 0 &&
-      length(trimspace(association.network_security_group_name)) > 0
-    ])
+    condition = length(var.postgresql_admin_password) >= 8
 
-    error_message = "Each subnet-to-NSG association must define a non-empty subnet key and NSG key."
+    error_message = "PostgreSQL administrator password must be at least 8 characters."
   }
 }
+
+
+# ============================================================
+# PRIVATE ENDPOINTS
+# ============================================================
+
 variable "private_endpoints" {
-  description = "Generic Azure Private Endpoints. Target resources are resolved from Terraform module outputs using a logical target key."
+  description = "Azure Private Endpoint configuration."
 
   type = map(object({
-    name                = string
-    location            = string
-    resource_group_name = string
-
-    vnet_key   = string
-    subnet_key = string
-
-    target_key = string
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
 
     private_service_connection = object({
-      name                 = string
-      is_manual_connection = optional(bool, false)
-      subresource_names    = list(string)
-      request_message      = optional(string, null)
+      name                           = string
+      private_connection_resource_id = string
+      subresource_names              = list(string)
+      is_manual_connection           = bool
     })
 
-    private_dns_zone_key = optional(string, null)
-
-    tags = optional(map(string), {})
+    private_dns_zone_group = optional(object({
+      name         = string
+      dns_zone_key = string
+    }))
   }))
+
+  default = {}
 
   validation {
     condition = alltrue([
-      for key, endpoint in var.private_endpoints :
-      length(trimspace(endpoint.name)) > 0 &&
-      length(trimspace(endpoint.location)) > 0 &&
-      length(trimspace(endpoint.resource_group_name)) > 0 &&
-      length(trimspace(endpoint.vnet_key)) > 0 &&
-      length(trimspace(endpoint.subnet_key)) > 0 &&
-      length(trimspace(endpoint.target_key)) > 0 &&
-      length(trimspace(endpoint.private_service_connection.name)) > 0 &&
-      length(endpoint.private_service_connection.subresource_names) > 0
+      for key, pe in var.private_endpoints :
+      length(trimspace(pe.name)) > 0
     ])
 
-    error_message = "Each private endpoint must define name, location, resource group, VNet key, subnet key, target key, service connection name, and at least one subresource."
+    error_message = "Each Private Endpoint must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, pe in var.private_endpoints :
+      length(pe.private_service_connection.subresource_names) > 0
+    ])
+
+    error_message = "Each Private Endpoint must define at least one subresource name."
   }
 }
 
+
+# ============================================================
+# PRIVATE DNS ZONES
+# ============================================================
+
 variable "private_dns_zones" {
-  description = "Private DNS zones used by Azure Private Endpoints."
+  description = "Private DNS Zones required for private Azure services."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    vnet_key            = string
-    tags                = optional(map(string), {})
+    name               = string
+    resource_group_key = string
   }))
+
+  validation {
+    condition = length(var.private_dns_zones) > 0
+
+    error_message = "At least one Private DNS Zone must be defined."
+  }
 
   validation {
     condition = alltrue([
       for key, zone in var.private_dns_zones :
-      length(trimspace(zone.name)) > 0 &&
-      can(regex(
-        "^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$",
-        trimspace(zone.name)
-      )) &&
-      length(trimspace(zone.resource_group_name)) > 0 &&
-      length(trimspace(zone.vnet_key)) > 0
+      length(trimspace(zone.name)) > 0
     ])
 
-    error_message = "Each Private DNS zone must define a valid DNS zone name, resource group name, and VNet key."
+    error_message = "Each Private DNS Zone must define a non-empty name."
   }
 }
 
-variable "bastions" {
-  description = "Azure Bastion hosts for secure administrative access. VNet/subnet and public IP relationships are resolved from outputs by key."
+
+# ============================================================
+# PRIVATE DNS ZONE - VNET LINKS
+# ============================================================
+
+variable "private_dns_zone_vnet_links" {
+  description = "Private DNS Zone to Virtual Network links."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-    vnet_key            = string
-    subnet_key          = string
-    public_ip_key       = string
-    tags                = optional(map(string), {})
+    dns_zone_key = string
+    vnet_key     = string
+
+    registration = optional(
+      bool,
+      false
+    )
   }))
 
   validation {
-    condition = alltrue([
-      for key, bastion in var.bastions :
-      length(trimspace(bastion.name)) > 0 &&
-      length(trimspace(bastion.resource_group_name)) > 0 &&
-      length(trimspace(bastion.location)) > 0 &&
-      length(trimspace(bastion.vnet_key)) > 0 &&
-      length(trimspace(bastion.subnet_key)) > 0 &&
-      length(trimspace(bastion.public_ip_key)) > 0
-    ])
+    condition = length(var.private_dns_zone_vnet_links) > 0
 
-    error_message = "Bastion name, resource group, location, VNet/subnet keys, and public IP key must be defined."
+    error_message = "At least one Private DNS Zone VNet link must be defined."
   }
 }
 
+# ============================================================
+# KEY VAULT
+# ============================================================
 
-
-
-variable "sql_servers" {
-  description = "Azure SQL logical servers for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    version                       = optional(string, "12.0")
-    administrator_login           = string
-    administrator_login_password  = string
-    minimum_tls_version           = optional(string, "1.2")
-    public_network_access_enabled = optional(bool, false)
-
-    tags = optional(map(string), {})
-  }))
-
-  # sensitive = true
-
-  validation {
-    condition = alltrue([
-      for key, server in var.sql_servers :
-      length(trimspace(server.name)) > 0 &&
-      length(trimspace(server.resource_group_name)) > 0 &&
-      length(trimspace(server.location)) > 0 &&
-      length(trimspace(server.administrator_login)) > 0 &&
-      length(server.administrator_login_password) >= 12
-    ])
-
-    error_message = "Each SQL Server must have a valid name, resource group, location, administrator login, and password of at least 12 characters."
-  }
-}
-
-variable "sql_databases" {
-  description = "Azure SQL databases for the workload environment."
+variable "key_vaults" {
+  description = "Azure Key Vault configuration."
 
   type = map(object({
-    name                 = string
-    sql_server_key       = string
-    sku_name             = string
-    max_size_gb          = optional(number, 32)
-    zone_redundant       = optional(bool, false)
-    storage_account_type = optional(string, "Geo")
-    collation            = optional(string, "SQL_Latin1_General_CP1_CI_AS")
-    read_scale           = optional(bool, false)
-    geo_backup_enabled   = optional(bool, true)
+    name               = string
+    resource_group_key = string
 
-    tags = optional(map(string), {})
-  }))
+    sku_name = optional(string, "standard")
 
-  validation {
-    condition = alltrue([
-      for key, database in var.sql_databases :
-      length(trimspace(database.name)) > 0 &&
-      length(trimspace(database.sql_server_key)) > 0 &&
-      length(trimspace(database.sku_name)) > 0 &&
-      database.max_size_gb > 0
-    ])
+    tenant_id = optional(string)
 
-    error_message = "Each SQL database must have a valid name, SQL Server key, SKU, and positive max_size_gb."
-  }
-}
-
-variable "postgresql_servers" {
-  description = "Azure Database for PostgreSQL Flexible Servers for the workload environment."
-
-  type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
-
-    version    = optional(string, "16")
-    sku_name   = string
-    storage_mb = optional(number, 32768)
-
-    administrator_login    = string
-    administrator_password = string
-
-    backup_retention_days        = optional(number, 7)
-    geo_redundant_backup_enabled = optional(bool, false)
+    soft_delete_retention_days = optional(number, 90)
+    purge_protection_enabled   = optional(bool, true)
 
     public_network_access_enabled = optional(bool, false)
 
-    zone = optional(string, null)
+    enabled_for_disk_encryption     = optional(bool, false)
+    enabled_for_deployment          = optional(bool, false)
+    enabled_for_template_deployment = optional(bool, false)
 
-    tags = optional(map(string), {})
+    enable_rbac_authorization = optional(bool, true)
   }))
 
-  validation {
-    condition = alltrue([
-      for key, server in var.postgresql_servers :
-      length(trimspace(server.name)) > 0 &&
-      length(trimspace(server.resource_group_name)) > 0 &&
-      length(trimspace(server.location)) > 0 &&
-      length(trimspace(server.administrator_login)) > 0 &&
-      length(server.administrator_password) >= 12 &&
-      length(trimspace(server.sku_name)) > 0
-    ])
-
-    error_message = "Each PostgreSQL server must define a valid name, resource group, location, administrator login, password of at least 12 characters, and SKU."
-  }
+  default = {}
 }
 
+# ============================================================
+# MONITORING
+# ============================================================
 
-variable "postgresql_databases" {
-  description = "PostgreSQL databases for the workload environment."
+variable "monitoring" {
+  description = "Azure Monitor, Log Analytics and Application Insights configuration."
 
-  type = map(object({
-    name                  = string
-    postgresql_server_key = string
+  type = object({
+    log_analytics_workspace = object({
+      name               = string
+      resource_group_key = string
+      sku                = optional(string, "PerGB2018")
+      retention_in_days  = optional(number, 30)
+    })
 
-    charset   = optional(string, "UTF8")
-    collation = optional(string, "en_US.utf8")
-
-    tags = optional(map(string), {})
-  }))
-
-  validation {
-    condition = alltrue([
-      for key, database in var.postgresql_databases :
-      length(trimspace(database.name)) > 0 &&
-      length(trimspace(database.postgresql_server_key)) > 0
-    ])
-
-    error_message = "Each PostgreSQL database must define a valid name and PostgreSQL server key."
-  }
+    application_insights = object({
+      name               = string
+      resource_group_key = string
+      application_type   = optional(string, "web")
+      retention_in_days  = optional(number, 90)
+    })
+  })
 }
