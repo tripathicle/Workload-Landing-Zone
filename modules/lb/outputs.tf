@@ -1,37 +1,28 @@
 output "load_balancers" {
-  description = "Created Load Balancers."
+  description = "Map of provisioned Azure Load Balancers."
 
   value = {
-    for key, lb in azurerm_lb.this : key => {
-      id   = lb.id
-      name = lb.name
-    }
-  }
-}
+    for lb_key, lb in azurerm_lb.this :
+    lb_key => {
+      id                  = lb.id
+      name                = lb.name
+      location            = lb.location
+      resource_group_name = lb.resource_group_name
 
-output "frontend_ip_configurations" {
-  description = "Load Balancer frontend IP configuration details."
-
-  value = {
-    for key, lb in azurerm_lb.this : key => {
-      id = one([
+      frontend_ip_address = [
         for frontend in lb.frontend_ip_configuration :
-        frontend.id
-        if frontend.name == var.load_balancers[key].frontend_ip_configuration.name
-      ])
-
-      private_ip_address = var.load_balancers[
-        key
-      ].frontend_ip_configuration.private_ip_address
+        frontend.private_ip_address
+      ][0]
     }
   }
 }
 
 output "backend_address_pools" {
-  description = "Load Balancer backend address pools."
+  description = "Map of Load Balancer backend address pools."
 
   value = {
-    for key, pool in azurerm_lb_backend_address_pool.this : key => {
+    for lb_key, pool in azurerm_lb_backend_address_pool.this :
+    lb_key => {
       id   = pool.id
       name = pool.name
     }
@@ -39,23 +30,13 @@ output "backend_address_pools" {
 }
 
 output "health_probes" {
-  description = "Load Balancer health probes."
+  description = "Map of Load Balancer health probes."
 
   value = {
-    for key, probe in azurerm_lb_probe.this : key => {
+    for lb_key, probe in azurerm_lb_probe.this :
+    lb_key => {
       id   = probe.id
       name = probe.name
-    }
-  }
-}
-
-output "rules" {
-  description = "Load Balancer rules."
-
-  value = {
-    for key, rule in azurerm_lb_rule.this : key => {
-      id   = rule.id
-      name = rule.name
     }
   }
 }
