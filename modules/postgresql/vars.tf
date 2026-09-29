@@ -1,110 +1,119 @@
 variable "postgresql_servers" {
-  description = "Map of Azure Database for PostgreSQL Flexible Servers."
+  description = "Azure PostgreSQL Flexible Server configuration."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
+    name               = string
+    resource_group_key = string
 
-    version    = optional(string, "16")
-    sku_name   = string
-    storage_mb = optional(number, 32768)
+    administrator_login = string
 
-    administrator_login          = string
-    administrator_password       = string
-    backup_retention_days        = optional(number, 7)
-    geo_redundant_backup_enabled = optional(bool, false)
+    version = optional(string, "16")
 
-    public_network_access_enabled = optional(bool, false)
+    sku_name = optional(
+      string,
+      "B_Standard_B1ms"
+    )
 
-    zone = optional(string, null)
+    storage_mb = optional(
+      number,
+      32768
+    )
 
-    tags = optional(map(string), {})
+    backup_retention_days = optional(
+      number,
+      7
+    )
+
+    geo_redundant_backup_enabled = optional(
+      bool,
+      false
+    )
+
+    public_network_access_enabled = optional(
+      bool,
+      false
+    )
+
+    database = optional(object({
+      name = string
+
+      charset = optional(
+        string,
+        "UTF8"
+      )
+
+      collation = optional(
+        string,
+        "en_US.utf8"
+      )
+    }))
+
+    high_availability = optional(object({
+      mode                      = string
+      standby_availability_zone = optional(string)
+    }))
   }))
 
   validation {
-    condition = alltrue([
-      for key, server in var.postgresql_servers :
-      length(trimspace(server.name)) > 0 &&
-      length(trimspace(server.resource_group_name)) > 0 &&
-      length(trimspace(server.location)) > 0 &&
-      length(trimspace(server.administrator_login)) > 0 &&
-      length(server.administrator_password) >= 12 &&
-      length(trimspace(server.sku_name)) > 0
-    ])
+    condition = length(var.postgresql_servers) > 0
 
-    error_message = "Each PostgreSQL server must define valid name, resource group, location, administrator login, password of at least 12 characters, and SKU."
+    error_message = "At least one PostgreSQL server must be defined."
   }
 
   validation {
     condition = alltrue([
       for key, server in var.postgresql_servers :
-      contains(
-        ["13", "14", "15", "16", "17"],
-        server.version
-      )
+      length(trimspace(server.name)) > 0
     ])
 
-    error_message = "PostgreSQL version must be one of the supported versions configured by this module."
+    error_message = "Each PostgreSQL server must define a non-empty name."
   }
 
   validation {
     condition = alltrue([
       for key, server in var.postgresql_servers :
-      server.storage_mb >= 32768
+      length(trimspace(server.administrator_login)) > 0
     ])
 
-    error_message = "PostgreSQL storage_mb must be at least 32768 MB."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, server in var.postgresql_servers :
-      server.backup_retention_days >= 7 &&
-      server.backup_retention_days <= 35
-    ])
-
-    error_message = "PostgreSQL backup retention must be between 7 and 35 days."
+    error_message = "Each PostgreSQL server must define a non-empty administrator login."
   }
 }
 
 
-variable "postgresql_databases" {
-  description = "Map of PostgreSQL databases."
+variable "administrator_password" {
+  description = "Administrator password for PostgreSQL Flexible Server."
+
+  type      = string
+  sensitive = true
+
+  validation {
+    condition = length(var.administrator_password) >= 8
+
+    error_message = "PostgreSQL administrator password must be at least 8 characters."
+  }
+}
+
+
+variable "resource_groups" {
+  description = "Resource Groups created by the Resource Group module."
 
   type = map(object({
-    name                  = string
-    postgresql_server_key = string
-
-    charset   = optional(string, "UTF8")
-    collation = optional(string, "en_US.utf8")
+    id       = string
+    name     = string
+    location = string
   }))
 
   validation {
-    condition = alltrue([
-      for key, database in var.postgresql_databases :
-      length(trimspace(database.name)) > 0 &&
-      length(trimspace(database.postgresql_server_key)) > 0
-    ])
+    condition = length(var.resource_groups) > 0
 
-    error_message = "Each PostgreSQL database must define a name and PostgreSQL server key."
+    error_message = "At least one Resource Group must be available."
   }
 }
 
 
 variable "tags" {
-  description = "Default tags applied to PostgreSQL resources."
+  description = "Common tags applied to PostgreSQL resources."
 
   type    = map(string)
   default = {}
-
-  validation {
-    condition = alltrue([
-      for key, value in var.tags :
-      length(trimspace(key)) > 0 &&
-      length(trimspace(value)) > 0
-    ])
-
-    error_message = "Each tag key and value must be non-empty."
-  }
 }
