@@ -1,21 +1,68 @@
-output "log_analytics_workspaces" {
-  description = "Map of provisioned Log Analytics workspaces."
+# ============================================================
+# LOG ANALYTICS WORKSPACE OUTPUT
+# ============================================================
+
+output "log_analytics_workspace" {
+  description = "Log Analytics Workspace information."
 
   value = {
-    for key, workspace in azurerm_log_analytics_workspace.this : key => {
-      id   = workspace.id
-      name = workspace.name
-    }
+    id = azurerm_log_analytics_workspace.this["workload"].id
+
+    name = (
+      azurerm_log_analytics_workspace.this["workload"].name
+    )
+
+    workspace_id = (
+      azurerm_log_analytics_workspace.this["workload"].workspace_id
+    )
+
+    resource_group_name = (
+      azurerm_log_analytics_workspace.this["workload"].resource_group_name
+    )
+
+    location = (
+      azurerm_log_analytics_workspace.this["workload"].location
+    )
   }
 }
 
+
+# ============================================================
+# APPLICATION INSIGHTS OUTPUT
+# ============================================================
+
 output "application_insights" {
-  description = "Map of provisioned Application Insights resources."
+  description = "Application Insights information."
 
   value = {
-    for key, appi in azurerm_application_insights.this : key => {
-      id   = appi.id
-      name = appi.name
-    }
+    id = (
+      azurerm_application_insights.this["workload"].id
+    )
+
+    name = (
+      azurerm_application_insights.this["workload"].name
+    )
+
+    app_id = (
+      azurerm_application_insights.this["workload"].app_id
+    )
+
+    instrumentation_key = (
+      azurerm_application_insights.this["workload"].instrumentation_key
+    )
+
+    connection_string = (
+      azurerm_application_insights.this["workload"].connection_string
+    )
+
+    resource_group_name = (
+      azurerm_application_insights.this["workload"].resource_group_name
+    )
+
+    location = (
+      azurerm_application_insights.this["workload"].location
+    )
   }
+
+  sensitive = true
 }
