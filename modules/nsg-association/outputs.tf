@@ -1,14 +1,12 @@
-# ============================================================
-# NSG ASSOCIATION OUTPUTS
-# ============================================================
-
-output "subnet_nsg_associations" {
-  description = "Map of provisioned subnet-to-NSG association resource IDs."
+output "nsg_associations" {
+  description = "Map of Network Security Group to Subnet associations."
 
   value = {
-    for key, association in azurerm_subnet_network_security_group_association.this :
-    key => {
-      id = association.id
+    for association_key, association in azurerm_subnet_network_security_group_association.this :
+    association_key => {
+      id                        = association.id
+      subnet_id                 = association.subnet_id
+      network_security_group_id = association.network_security_group_id
     }
   }
 }

@@ -1,56 +1,61 @@
-# ============================================================
-# SUBNET -> NSG ASSOCIATION CONFIGURATION
-# ============================================================
-
-variable "subnet_nsg_associations" {
-  description = "Map of subnet-to-NSG associations. Values reference logical subnet and NSG keys exposed by upstream modules."
+variable "nsg_associations" {
+  description = "Map of Network Security Group to Subnet associations."
 
   type = map(object({
-    subnet_name                 = string
-    network_security_group_name = string
+    nsg_key    = string
+    subnet_key = string
   }))
 
-  default = {}
+  validation {
+    condition     = length(var.nsg_associations) > 0
+    error_message = "At least one NSG association must be defined."
+  }
 
   validation {
     condition = alltrue([
-      for key, association in var.subnet_nsg_associations :
-      length(trimspace(association.subnet_name)) > 0 &&
-      length(trimspace(association.network_security_group_name)) > 0
+      for association_key, association in var.nsg_associations :
+      length(trimspace(association_key)) > 0
     ])
+    error_message = "Each NSG association map key must be a non-empty string."
+  }
 
-    error_message = "Each subnet-to-NSG association must define a non-empty subnet key and NSG key."
+  validation {
+    condition = alltrue([
+      for association_key, association in var.nsg_associations :
+      length(trimspace(association.nsg_key)) > 0 &&
+      length(trimspace(association.subnet_key)) > 0
+    ])
+    error_message = "Each NSG association must define non-empty nsg_key and subnet_key values."
   }
 }
 
-
-# ============================================================
-# SUBNET OUTPUTS FROM NETWORK MODULE
-# ============================================================
-
-variable "subnets" {
-  description = "Map of subnet output objects produced by the network module."
+variable "network_security_groups" {
+  description = "Network Security Groups created by the NSG module."
 
   type = map(object({
-    id   = string
-    name = string
+    id                  = string
+    name                = string
+    resource_group_name = string
+    location            = string
   }))
 
-  default = {}
+  validation {
+    condition     = length(var.network_security_groups) > 0
+    error_message = "At least one Network Security Group must be available."
+  }
 }
 
-
-# ============================================================
-# NSG OUTPUTS FROM NSG MODULE
-# ============================================================
-
-variable "nsgs" {
-  description = "Map of NSG output objects produced by the NSG module."
+variable "subnets" {
+  description = "Subnets created by the Subnet module."
 
   type = map(object({
-    id   = string
-    name = string
+    id               = string
+    name             = string
+    address_prefixes = list(string)
   }))
 
-  default = {}
+  validation {
+    condition     = length(var.subnets) > 0
+    error_message = "At least one subnet must be available."
+  }
 }
