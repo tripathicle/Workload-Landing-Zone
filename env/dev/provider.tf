@@ -7,6 +7,13 @@ terraform {
       version = "5.4.0"
     }
   }
+
+  backend "azurerm" {
+    resource_group_name  = "rg-tfstate-hubandspokewl"
+    storage_account_name = "sttfstatehubandspokewl"
+    container_name       = "tfstate"
+    key                  = "workload/dev.tfstate"
+  }
 }
 
 provider "azurerm" {
