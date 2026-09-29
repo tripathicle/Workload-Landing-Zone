@@ -1,17 +1,73 @@
 # ============================================================
-# AZURE APPLICATION GATEWAY
+# WEB APPLICATION FIREWALL POLICY
+# ============================================================
+
+resource "azurerm_web_application_firewall_policy" "this" {
+  for_each = {
+    for gateway_key, gateway in var.application_gateways :
+    gateway_key => gateway
+    if gateway.waf_policy != null
+  }
+
+  name = "wafpol-${each.value.name}"
+
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
+
+  # ==========================================================
+  # WAF POLICY SETTINGS
+  # ==========================================================
+
+  policy_settings {
+    enabled = each.value.waf_policy.enabled
+    mode    = each.value.waf_policy.firewall_mode
+  }
+
+  # ==========================================================
+  # MANAGED RULES
+  # OWASP 3.2
+  # ==========================================================
+
+  managed_rules {
+    managed_rule_set {
+      type    = each.value.waf_policy.rule_set_type
+      version = each.value.waf_policy.rule_set_version
+    }
+  }
+
+  tags = var.tags
+}
+
+
+# ============================================================
+# APPLICATION GATEWAY
 # ============================================================
 
 resource "azurerm_application_gateway" "this" {
   for_each = var.application_gateways
 
   name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-  location            = each.value.location
+  resource_group_name = var.resource_groups[each.value.resource_group_key].name
+  location            = var.resource_groups[each.value.resource_group_key].location
 
-  # ----------------------------------------------------------
+  # ==========================================================
+  # WAF POLICY ASSOCIATION
+  # ==========================================================
+
+  firewall_policy_id = (
+    each.value.waf_policy != null
+    ? azurerm_web_application_firewall_policy.this[each.key].id
+    : null
+  )
+
+  # ==========================================================
   # SKU
-  # ----------------------------------------------------------
+  # ==========================================================
 
   sku {
     name     = each.value.sku.name
@@ -19,176 +75,207 @@ resource "azurerm_application_gateway" "this" {
     capacity = each.value.sku.capacity
   }
 
-  # ----------------------------------------------------------
-  # WAF
-  # ----------------------------------------------------------
-
-  dynamic "waf_configuration" {
-    for_each = each.value.waf_configuration != null ? [each.value.waf_configuration] : []
-
-    content {
-      enabled                  = waf_configuration.value.enabled
-      firewall_mode            = waf_configuration.value.firewall_mode
-      rule_set_type            = waf_configuration.value.rule_set_type
-      rule_set_version         = waf_configuration.value.rule_set_version
-      file_upload_limit_mb     = waf_configuration.value.file_upload_limit_mb
-      request_body_check       = waf_configuration.value.request_body_check
-      max_request_body_size_kb = waf_configuration.value.max_request_body_size_kb
-    }
-  }
-
-  # ----------------------------------------------------------
+  # ==========================================================
   # GATEWAY IP CONFIGURATION
-  # ----------------------------------------------------------
+  # ==========================================================
 
   gateway_ip_configuration {
-    name      = each.value.gateway_ip_configuration.name
-    subnet_id = each.value.gateway_ip_configuration.subnet_id
+    name      = each.value.gateway_ip_configuration_name
+    subnet_id = var.subnets[each.value.subnet_key].id
   }
 
-  # ----------------------------------------------------------
-  # FRONTEND IP
-  # ----------------------------------------------------------
+  # ==========================================================
+  # PUBLIC FRONTEND IP
+  # ==========================================================
 
   frontend_ip_configuration {
-    name                 = each.value.frontend_ip_configuration.name
-    public_ip_address_id = each.value.frontend_ip_configuration.public_ip_address_id
+    name                 = each.value.frontend_ip_configuration_name
+    public_ip_address_id = var.public_ips[each.value.public_ip_key].id
   }
 
-  # ----------------------------------------------------------
+  # ==========================================================
   # FRONTEND PORT
-  # ----------------------------------------------------------
+  # ==========================================================
 
   frontend_port {
-    name = each.value.frontend_port.name
-    port = each.value.frontend_port.port
-  }
-
-  # ----------------------------------------------------------
-  # HTTP LISTENER
-  # ----------------------------------------------------------
-
-  http_listener {
-    name                           = each.value.http_listener.name
-    frontend_ip_configuration_name = each.value.http_listener.frontend_ip_configuration_name
-    frontend_port_name             = each.value.http_listener.frontend_port_name
-    protocol                       = each.value.http_listener.protocol
+    name = each.value.frontend_port_name
+    port = each.value.frontend_port
   }
 
   # ==========================================================
-  # BACKEND ADDRESS POOLS
+  # FRONTEND BACKEND POOL
+  # FE-01 + FE-02
   # ==========================================================
 
-  dynamic "backend_address_pool" {
-    for_each = each.value.backend_address_pools
+  backend_address_pool {
+    name = each.value.frontend_backend.name
 
-    content {
-      name         = backend_address_pool.key
-      ip_addresses = backend_address_pool.value.ip_addresses
+    ip_addresses = each.value.frontend_backend.ip_addresses
+  }
+
+  # ==========================================================
+  # BACKEND POOL
+  # Internal Load Balancer 10.20.2.10
+  # ==========================================================
+
+  backend_address_pool {
+    name = each.value.backend_backend.name
+
+    ip_addresses = each.value.backend_backend.ip_addresses
+  }
+
+  # ==========================================================
+  # FRONTEND HEALTH PROBE
+  # FE VMs :80 /
+  # ==========================================================
+
+  probe {
+    name     = each.value.frontend_backend.probe_name
+    protocol = "Http"
+
+    host = "localhost"
+
+    path = each.value.frontend_backend.probe_path
+
+    interval            = 30
+    timeout             = 30
+    unhealthy_threshold = 3
+
+    match {
+      status_code = [
+        "200-399"
+      ]
     }
   }
 
   # ==========================================================
-  # HEALTH PROBES
+  # BACKEND HEALTH PROBE
+  # Internal LB :8080 /health
   # ==========================================================
 
-  dynamic "probe" {
-    for_each = each.value.health_probes
+  probe {
+    name     = each.value.backend_backend.probe_name
+    protocol = "Http"
 
-    content {
-      name                = probe.value.name
-      protocol            = probe.value.protocol
-      port                = probe.value.port
-      path                = probe.value.path
-      interval            = probe.value.interval
-      timeout             = probe.value.timeout
-      unhealthy_threshold = probe.value.unhealthy_threshold
+    host = "localhost"
+
+    path = each.value.backend_backend.probe_path
+
+    interval            = 30
+    timeout             = 30
+    unhealthy_threshold = 3
+
+    match {
+      status_code = [
+        "200-399"
+      ]
     }
+  }
+
+  # ==========================================================
+  # FRONTEND HTTP SETTINGS
+  # App Gateway -> FE VMs :80
+  # ==========================================================
+
+  backend_http_settings {
+    name                  = each.value.frontend_backend.http_settings_name
+    cookie_based_affinity = "Disabled"
+
+    port     = each.value.frontend_backend.http_settings_port
+    protocol = "Http"
+
+    request_timeout = 30
+    probe_name      = each.value.frontend_backend.probe_name
   }
 
   # ==========================================================
   # BACKEND HTTP SETTINGS
+  # App Gateway -> Internal LB :8080
   # ==========================================================
 
-  dynamic "backend_http_settings" {
-    for_each = each.value.backend_http_settings
+  backend_http_settings {
+    name                  = each.value.backend_backend.http_settings_name
+    cookie_based_affinity = "Disabled"
 
-    content {
-      name                  = backend_http_settings.value.name
-      cookie_based_affinity = backend_http_settings.value.cookie_based_affinity
-      port                  = backend_http_settings.value.port
-      protocol              = backend_http_settings.value.protocol
-      request_timeout       = backend_http_settings.value.request_timeout
-      probe_name            = backend_http_settings.value.probe_name
-    }
+    port     = each.value.backend_backend.http_settings_port
+    protocol = "Http"
+
+    request_timeout = 30
+    probe_name      = each.value.backend_backend.probe_name
+  }
+
+  # ==========================================================
+  # HTTP LISTENER
+  # Internet -> App Gateway :80
+  # ==========================================================
+
+  http_listener {
+    name = each.value.http_listener_name
+
+    frontend_ip_configuration_name = (
+      each.value.frontend_ip_configuration_name
+    )
+
+    frontend_port_name = each.value.frontend_port_name
+
+    protocol = "Http"
   }
 
   # ==========================================================
   # URL PATH MAP
-  # ==========================================================
   #
-  # Default:
-  #   / -> frontend
-  #
-  # Path:
-  #   /api/* -> backend
-  #
+  # /api/* -> Backend LB
+  # default -> Frontend VMs
   # ==========================================================
 
-  dynamic "url_path_map" {
-    for_each = [
-      each.value.request_routing_rule
-    ]
+  url_path_map {
+    name = each.value.path_map_name
 
-    content {
-      name = url_path_map.value.url_path_map_name
+    default_backend_address_pool_name = (
+      each.value.default_backend_address_pool_name
+    )
 
-      default_backend_address_pool_name = (
-        url_path_map.value.default_backend_address_pool_name
-      )
+    default_backend_http_settings_name = (
+      each.value.default_backend_http_settings_name
+    )
 
-      default_backend_http_settings_name = (
-        url_path_map.value.default_backend_http_settings_name
-      )
+    dynamic "path_rule" {
+      for_each = each.value.path_rules
 
-      dynamic "path_rule" {
-        for_each = url_path_map.value.path_rules
+      content {
+        name = path_rule.value.name
 
-        content {
-          name  = path_rule.value.name
-          paths = path_rule.value.paths
+        paths = path_rule.value.paths
 
-          backend_address_pool_name = (
-            path_rule.value.backend_address_pool_name
-          )
+        backend_address_pool_name = (
+          path_rule.value.backend_address_pool_name
+        )
 
-          backend_http_settings_name = (
-            path_rule.value.backend_http_settings_name
-          )
-        }
+        backend_http_settings_name = (
+          path_rule.value.backend_http_settings_name
+        )
       }
     }
   }
 
   # ==========================================================
   # REQUEST ROUTING RULE
+  # Path Based Routing
   # ==========================================================
 
   request_routing_rule {
-    name               = each.value.request_routing_rule.name
-    priority           = each.value.request_routing_rule.priority
-    rule_type          = each.value.request_routing_rule.rule_type
-    http_listener_name = each.value.request_routing_rule.http_listener_name
+    name     = each.value.request_routing_rule_name
+    priority = each.value.request_routing_rule_priority
 
-    url_path_map_name = each.value.request_routing_rule.url_path_map_name
+    rule_type = "PathBasedRouting"
+
+    http_listener_name = each.value.http_listener_name
+    url_path_map_name  = each.value.path_map_name
   }
 
-  # ----------------------------------------------------------
+  # ==========================================================
   # TAGS
-  # ----------------------------------------------------------
+  # ==========================================================
 
-  tags = merge(
-    var.tags,
-    each.value.tags
-  )
+  tags = var.tags
 }
