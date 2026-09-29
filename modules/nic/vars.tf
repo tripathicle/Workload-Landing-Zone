@@ -1,75 +1,118 @@
-# ============================================================
-# Network Interface Input
-# ============================================================
-# CHANGE:
-# - Added explicit validation for IP allocation mode.
-# - Added validation for required string values.
-# - Kept private_ip_address optional because Dynamic allocation
-#   does not require a manually assigned IP.
-# ============================================================
-
 variable "network_interfaces" {
   description = "Map of Azure Network Interfaces to provision."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
 
     ip_configuration = object({
       name                          = string
-      subnet_id                     = string
-      private_ip_address_allocation = string
-      private_ip_address            = optional(string, null)
+      private_ip_address_allocation = optional(string, "Static")
+      private_ip_address            = optional(string)
     })
 
-    tags = optional(map(string), {})
+    enable_accelerated_networking = optional(bool, false)
+
+    load_balancer_backend_pool_key = optional(string)
   }))
 
   validation {
-    condition = alltrue([
-      for key, nic in var.network_interfaces :
-      length(trimspace(nic.name)) > 0 &&
-      length(trimspace(nic.resource_group_name)) > 0 &&
-      length(trimspace(nic.location)) > 0 &&
-      length(trimspace(nic.ip_configuration.name)) > 0 &&
-      length(trimspace(nic.ip_configuration.subnet_id)) > 0 &&
-      contains(
-        ["Static", "Dynamic"],
-        nic.ip_configuration.private_ip_address_allocation
-      )
-    ])
-
-    error_message = "Each NIC must define a name, resource group, location, IP configuration name, subnet ID, and a private IP allocation mode of either Static or Dynamic."
+    condition     = length(var.network_interfaces) > 0
+    error_message = "At least one Network Interface must be defined."
   }
 
   validation {
     condition = alltrue([
-      for key, nic in var.network_interfaces :
-      nic.ip_configuration.private_ip_address_allocation == "Dynamic" ||
-      (
-        nic.ip_configuration.private_ip_address != null &&
-        length(trimspace(nic.ip_configuration.private_ip_address)) > 0
-      )
+      for nic_key, nic in var.network_interfaces :
+      length(trimspace(nic.name)) > 0
     ])
 
-    error_message = "A private_ip_address must be provided when private_ip_address_allocation is Static."
+    error_message = "Each Network Interface must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for nic_key, nic in var.network_interfaces :
+      length(trimspace(nic.resource_group_key)) > 0
+    ])
+
+    error_message = "Each Network Interface must define a resource_group_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for nic_key, nic in var.network_interfaces :
+      length(trimspace(nic.subnet_key)) > 0
+    ])
+
+    error_message = "Each Network Interface must define a subnet_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for nic_key, nic in var.network_interfaces :
+      nic.ip_configuration.private_ip_address_allocation == "Static"
+    ])
+
+    error_message = "All workload NICs must use Static private IP allocation."
+  }
+
+  validation {
+    condition = alltrue([
+      for nic_key, nic in var.network_interfaces :
+      nic.ip_configuration.private_ip_address != null &&
+      length(trimspace(nic.ip_configuration.private_ip_address)) > 0
+    ])
+
+    error_message = "Each workload NIC must define a private IP address."
   }
 }
 
+variable "resource_groups" {
+  description = "Resource Groups created by the Resource Group module."
 
-# ============================================================
-# Common Tags
-# ============================================================
-# CHANGE:
-# - Kept common tags as a module-level input.
-# - Environment/root module controls common tagging.
-# ============================================================
+  type = map(object({
+    id       = string
+    name     = string
+    location = string
+  }))
+
+  validation {
+    condition     = length(var.resource_groups) > 0
+    error_message = "At least one Resource Group must be available to the NIC module."
+  }
+}
+
+variable "subnets" {
+  description = "Subnets created by the Subnet module."
+
+  type = map(object({
+    id               = string
+    name             = string
+    address_prefixes = list(string)
+  }))
+
+  validation {
+    condition     = length(var.subnets) > 0
+    error_message = "At least one subnet must be available to the NIC module."
+  }
+}
+
+variable "backend_address_pools" {
+  description = "Load Balancer backend address pools available for NIC association."
+
+  type = map(object({
+    id   = string
+    name = string
+  }))
+
+  default = {}
+}
 
 variable "tags" {
-  description = "Default tags applied to all network interfaces."
+  description = "Common tags applied to Network Interfaces."
 
-  type = map(string)
-
+  type    = map(string)
   default = {}
 }
