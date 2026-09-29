@@ -1,37 +1,46 @@
-# Resource: azurerm_key_vault
-# Description: Creates Azure Key Vault instances for secure secret storage and application configuration values.
-# ## Arguments Reference
-# - name: (Required) Key Vault name.
-# - resource_group_name: (Required) Resource group where the vault is created.
-# - location: (Required) Azure region.
-# - tenant_id: (Required) Microsoft Entra tenant ID used by the vault.
-# - sku_name: (Required) Pricing tier for the Key Vault.
-# - purge_protection_enabled: (Optional) Enables purge protection.
-# - soft_delete_retention_days: (Optional) Number of days to retain soft-deleted vaults.
-# - public_network_access_enabled: (Optional) Allows public network access.
-# - tags: (Optional) Resource tags.
+# ============================================================
+# CURRENT AZURE CLIENT CONFIGURATION
+# ============================================================
 
+data "azurerm_client_config" "current" {}
+
+
+# ============================================================
+# AZURE KEY VAULT
+# ============================================================
 
 resource "azurerm_key_vault" "this" {
   for_each = var.key_vaults
 
-  name                = each.value.name
-  location            = each.value.location
-  resource_group_name = each.value.resource_group_name
+  name = each.value.name
 
-  tenant_id = each.value.tenant_id
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
+
+  tenant_id = coalesce(
+    each.value.tenant_id,
+    data.azurerm_client_config.current.tenant_id
+  )
 
   sku_name = each.value.sku_name
 
-  enable_rbac_authorization = each.value.enable_rbac_authorization
-
-  purge_protection_enabled   = each.value.purge_protection_enabled
   soft_delete_retention_days = each.value.soft_delete_retention_days
+  purge_protection_enabled   = each.value.purge_protection_enabled
 
   public_network_access_enabled = each.value.public_network_access_enabled
 
-  tags = merge(
-    var.tags,
-    each.value.tags
+  enabled_for_disk_encryption = each.value.enabled_for_disk_encryption
+  enabled_for_deployment      = each.value.enabled_for_deployment
+  enabled_for_template_deployment = (
+    each.value.enabled_for_template_deployment
   )
+
+  rbac_authorization_enabled = each.value.enable_rbac_authorization
+
+  tags = var.tags
 }
