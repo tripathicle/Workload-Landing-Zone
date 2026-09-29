@@ -2,47 +2,96 @@ variable "bastions" {
   description = "Map of Azure Bastion hosts to provision."
 
   type = map(object({
-    name                = string
-    resource_group_name = string
-    location            = string
+    name               = string
+    resource_group_key = string
+    subnet_key         = string
+    public_ip_key      = string
 
-    ip_configuration = object({
-      name                 = string
-      subnet_id            = string
-      public_ip_address_id = string
-    })
+    sku = optional(string, "Standard")
 
-    tags = optional(map(string), {})
+    copy_paste_enabled     = optional(bool, true)
+    file_copy_enabled      = optional(bool, true)
+    ip_connect_enabled     = optional(bool, true)
+    shareable_link_enabled = optional(bool, false)
+    tunneling_enabled      = optional(bool, true)
   }))
 
   validation {
+    condition     = length(var.bastions) > 0
+    error_message = "At least one Azure Bastion host must be defined."
+  }
+
+  validation {
     condition = alltrue([
-      for key, bastion in var.bastions :
-      length(trimspace(bastion.name)) > 0 &&
-      length(trimspace(bastion.resource_group_name)) > 0 &&
-      length(trimspace(bastion.location)) > 0 &&
-      length(trimspace(bastion.ip_configuration.name)) > 0 &&
-      length(trimspace(bastion.ip_configuration.subnet_id)) > 0 &&
-      length(trimspace(bastion.ip_configuration.public_ip_address_id)) > 0
+      for bastion_key, bastion in var.bastions :
+      bastion.sku == "Standard"
     ])
 
-    error_message = "Each Bastion host must define a non-empty name, resource group, location, IP configuration name, subnet ID, and public IP address ID."
+    error_message = "All Azure Bastion hosts must use the Standard SKU."
+  }
+
+  validation {
+    condition = alltrue([
+      for bastion_key, bastion in var.bastions :
+      length(trimspace(bastion.name)) > 0
+    ])
+
+    error_message = "Each Bastion must define a non-empty name."
+  }
+}
+
+variable "resource_groups" {
+  description = "Resource Groups created by the Resource Group module."
+
+  type = map(object({
+    id       = string
+    name     = string
+    location = string
+  }))
+
+  validation {
+    condition     = length(var.resource_groups) > 0
+    error_message = "At least one Resource Group must be available to the Bastion module."
+  }
+}
+
+variable "subnets" {
+  description = "Subnets created by the Subnet module."
+
+  type = map(object({
+    id               = string
+    name             = string
+    address_prefixes = list(string)
+  }))
+
+  validation {
+    condition     = length(var.subnets) > 0
+    error_message = "At least one subnet must be available to the Bastion module."
+  }
+}
+
+variable "public_ips" {
+  description = "Public IPs created by the Public IP module."
+
+  type = map(object({
+    id                  = string
+    name                = string
+    ip_address          = string
+    resource_group_name = string
+    location            = string
+    sku                 = string
+    allocation_method   = string
+  }))
+
+  validation {
+    condition     = length(var.public_ips) > 0
+    error_message = "At least one Public IP must be available to the Bastion module."
   }
 }
 
 variable "tags" {
-  description = "Default tags applied to Bastion resources."
+  description = "Common tags applied to Azure Bastion."
 
   type    = map(string)
   default = {}
-
-  validation {
-    condition = alltrue([
-      for key, value in var.tags :
-      length(trimspace(key)) > 0 &&
-      length(trimspace(value)) > 0
-    ])
-
-    error_message = "Each tag key and value must be non-empty."
-  }
 }
