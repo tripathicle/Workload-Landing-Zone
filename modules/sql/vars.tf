@@ -1,104 +1,84 @@
 variable "sql_servers" {
-  description = "Map of Azure SQL logical servers to provision."
-
-  # sensitive = true
+  description = "Azure SQL Server and optional database configuration."
 
   type = map(object({
     name                = string
-    resource_group_name = string
-    location            = string
+    resource_group_key  = string
+    administrator_login = string
 
-    version                      = optional(string, "12.0")
-    administrator_login          = string
-    administrator_login_password = string
+    version             = optional(string, "12.0")
+    minimum_tls_version = optional(string, "1.2")
 
-    minimum_tls_version           = optional(string, "1.2")
     public_network_access_enabled = optional(bool, false)
 
-    tags = optional(map(string), {})
+    database = optional(object({
+      name                 = string
+      sku_name             = string
+      max_size_gb          = optional(number)
+      zone_redundant       = optional(bool, false)
+      storage_account_type = optional(string, "Local")
+    }))
   }))
 
   validation {
-    condition = alltrue([
-      for key, server in var.sql_servers :
-      length(trimspace(server.name)) >= 1 &&
-      length(trimspace(server.resource_group_name)) > 0 &&
-      length(trimspace(server.location)) > 0 &&
-      length(trimspace(server.administrator_login)) >= 1 &&
-      length(server.administrator_login_password) >= 12
-    ])
+    condition = length(var.sql_servers) > 0
 
-    error_message = "Each SQL Server must define a valid name, resource group, location, administrator login, and password of at least 12 characters."
+    error_message = "At least one Azure SQL Server must be defined."
   }
 
   validation {
     condition = alltrue([
       for key, server in var.sql_servers :
-      contains(
-        ["1.2"],
-        server.minimum_tls_version
-      )
+      length(trimspace(server.name)) > 0
     ])
 
-    error_message = "minimum_tls_version must be 1.2."
+    error_message = "Each Azure SQL Server must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, server in var.sql_servers :
+      length(trimspace(server.administrator_login)) > 0
+    ])
+
+    error_message = "Each Azure SQL Server must define a non-empty administrator login."
   }
 }
 
-variable "sql_databases" {
-  description = "Map of Azure SQL databases to provision."
+
+variable "administrator_password" {
+  description = "Administrator password for Azure SQL Server."
+
+  type      = string
+  sensitive = true
+
+  validation {
+    condition     = length(var.administrator_password) >= 8
+    error_message = "Azure SQL administrator password must be at least 8 characters."
+  }
+}
+
+
+variable "resource_groups" {
+  description = "Resource Groups created by the Resource Group module."
 
   type = map(object({
-    name                 = string
-    sql_server_key       = string
-    sku_name             = string
-    max_size_gb          = optional(number, 32)
-    zone_redundant       = optional(bool, false)
-    storage_account_type = optional(string, "Geo")
-    collation            = optional(string, "SQL_Latin1_General_CP1_CI_AS")
-    read_scale           = optional(bool, false)
-    geo_backup_enabled   = optional(bool, true)
-
-    tags = optional(map(string), {})
+    id       = string
+    name     = string
+    location = string
   }))
 
   validation {
-    condition = alltrue([
-      for key, database in var.sql_databases :
-      length(trimspace(database.name)) > 0 &&
-      length(trimspace(database.sql_server_key)) > 0 &&
-      length(trimspace(database.sku_name)) > 0 &&
-      database.max_size_gb > 0
-    ])
+    condition = length(var.resource_groups) > 0
 
-    error_message = "Each SQL database must define a name, SQL Server key, SKU, and positive max_size_gb."
-  }
-
-  validation {
-    condition = alltrue([
-      for key, database in var.sql_databases :
-      contains(
-        ["Geo", "Local"],
-        database.storage_account_type
-      )
-    ])
-
-    error_message = "storage_account_type must be either Geo or Local."
+    error_message = "At least one Resource Group must be available."
   }
 }
 
+
 variable "tags" {
-  description = "Default tags applied to SQL resources."
+  description = "Common tags applied to Azure SQL resources."
 
   type    = map(string)
   default = {}
-
-  validation {
-    condition = alltrue([
-      for key, value in var.tags :
-      length(trimspace(key)) > 0 &&
-      length(trimspace(value)) > 0
-    ])
-
-    error_message = "Each tag key and value must be non-empty."
-  }
 }
