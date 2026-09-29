@@ -1,53 +1,54 @@
-# Resource: azurerm_log_analytics_workspace
-# Description: Creates a centralized Log Analytics workspace for diagnostics and security monitoring.
-# ## Arguments Reference
-# - name: (Required) Workspace name.
-# - resource_group_name: (Required) Target resource group.
-# - location: (Required) Azure region.
-# - sku: (Optional) Log Analytics SKU.
-# - retention_in_days: (Optional) Data retention period.
-# - tags: (Optional) Resource tags.
-
-# Resource: azurerm_application_insights
-# Description: Creates Application Insights for application telemetry and health monitoring.
-# ## Arguments Reference
-# - name: (Required) Application Insights resource name.
-# - resource_group_name: (Required) Target resource group.
-# - location: (Required) Azure region.
-# - workspace_id: (Required) Log Analytics workspace ID.
-# - application_type: (Optional) Application type for telemetry.
-# - tags: (Optional) Resource tags.
+# ============================================================
+# LOG ANALYTICS WORKSPACE
+# ============================================================
 
 resource "azurerm_log_analytics_workspace" "this" {
-  for_each = var.log_analytics_workspaces
+  for_each = {
+    workload = var.monitoring.log_analytics_workspace
+  }
 
-  name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-  location            = each.value.location
-  sku                 = each.value.sku
-  retention_in_days   = each.value.retention_in_days
+  name = each.value.name
 
-  tags = merge(
-    var.tags,
-    each.value.tags
-  )
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
+
+  sku = each.value.sku
+
+  retention_in_days = each.value.retention_in_days
+
+  tags = var.tags
 }
 
+
+# ============================================================
+# APPLICATION INSIGHTS
+# ============================================================
+
 resource "azurerm_application_insights" "this" {
-  for_each = var.application_insights
+  for_each = {
+    workload = var.monitoring.application_insights
+  }
 
-  name                = each.value.name
-  resource_group_name = each.value.resource_group_name
-  location            = each.value.location
+  name = each.value.name
 
-  workspace_id = azurerm_log_analytics_workspace.this[
-    each.value.workspace_key
-  ].id
+  resource_group_name = var.resource_groups[
+    each.value.resource_group_key
+  ].name
+
+  location = var.resource_groups[
+    each.value.resource_group_key
+  ].location
 
   application_type = each.value.application_type
 
-  tags = merge(
-    var.tags,
-    each.value.tags
-  )
+  workspace_id = azurerm_log_analytics_workspace.this["workload"].id
+
+  retention_in_days = each.value.retention_in_days
+
+  tags = var.tags
 }
