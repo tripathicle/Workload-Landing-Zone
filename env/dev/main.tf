@@ -3,7 +3,7 @@
 # ============================================================
 
 module "resource_group" {
-  source = "../../Modules/resource_group"
+  source = "../../modules/resource_group"
 
   resource_groups = var.resource_groups
   tags            = var.tags
@@ -15,7 +15,7 @@ module "resource_group" {
 # ============================================================
 
 module "storage_account" {
-  source = "../../Modules/storage_account"
+  source = "../../modules/storage_account"
 
   storage_accounts = var.storage_accounts
   resource_groups  = module.resource_group.resource_groups
@@ -28,7 +28,7 @@ module "storage_account" {
 # ============================================================
 
 module "vnet" {
-  source = "../../Modules/virtual_network"
+  source = "../../modules/virtual_network"
 
   vnets           = var.vnets
   resource_groups = module.resource_group.resource_groups
@@ -41,7 +41,7 @@ module "vnet" {
 # ============================================================
 
 module "subnet" {
-  source = "../../Modules/subnets"
+  source = "../../modules/subnets"
 
   subnets = var.subnets
   vnets   = module.vnet.vnets
@@ -53,7 +53,7 @@ module "subnet" {
 # ============================================================
 
 module "vnet_peering" {
-  source = "../../Modules/vnet_peering"
+  source = "../../modules/vnet_peering"
 
   vnet_peerings = var.vnet_peerings
   vnets         = module.vnet.vnets
@@ -65,7 +65,7 @@ module "vnet_peering" {
 # ============================================================
 
 module "public_ip" {
-  source = "../../Modules/public-ip"
+  source = "../../modules/public-ip"
 
   public_ips      = var.public_ips
   resource_groups = module.resource_group.resource_groups
@@ -78,7 +78,7 @@ module "public_ip" {
 # ============================================================
 
 module "nsg" {
-  source = "../../Modules/nsg"
+  source = "../../modules/nsg"
 
   network_security_groups = var.network_security_groups
   resource_groups         = module.resource_group.resource_groups
@@ -91,7 +91,7 @@ module "nsg" {
 # ============================================================
 
 module "nsg_association" {
-  source = "../../Modules/nsg-association"
+  source = "../../modules/nsg-association"
 
   nsg_associations        = var.nsg_associations
   network_security_groups = module.nsg.network_security_groups
@@ -104,7 +104,7 @@ module "nsg_association" {
 # ============================================================
 
 module "lb" {
-  source = "../../Modules/lb"
+  source = "../../modules/lb"
 
   load_balancers = var.load_balancers
 
@@ -120,7 +120,7 @@ module "lb" {
 # ============================================================
 
 module "nic" {
-  source = "../../Modules/nic"
+  source = "../../modules/nic"
 
   network_interfaces = var.network_interfaces
 
@@ -139,7 +139,7 @@ module "nic" {
 
 
 module "vm" {
-  source = "../../Modules/vm"
+  source = "../../modules/vm"
 
   virtual_machines = {
     for key, vm in var.virtual_machines :
@@ -170,7 +170,7 @@ module "vm" {
 # ============================================================
 
 module "gateway" {
-  source = "../../Modules/gateway"
+  source = "../../modules/gateway"
 
   application_gateways = var.application_gateways
   resource_groups      = module.resource_group.resource_groups
@@ -185,7 +185,7 @@ module "gateway" {
 # ============================================================
 
 module "bastion" {
-  source = "../../Modules/bastion"
+  source = "../../modules/bastion"
 
   bastions = var.bastions
 
@@ -202,7 +202,7 @@ module "bastion" {
 # ============================================================
 
 module "sql" {
-  source = "../../Modules/sql"
+  source = "../../modules/sql"
 
   sql_servers = var.sql_servers
 
@@ -219,7 +219,7 @@ module "sql" {
 # ============================================================
 
 module "postgresql" {
-  source = "../../Modules/postgresql"
+  source = "../../modules/postgresql"
 
   postgresql_servers = var.postgresql_servers
 
@@ -241,7 +241,7 @@ module "postgresql" {
 # ============================================================
 
 module "private_access" {
-  source = "../../Modules/private-access"
+  source = "../../modules/private-access"
 
   private_endpoints = local.private_endpoints
 
@@ -274,7 +274,7 @@ module "private_access" {
 # ============================================================
 
 module "key_vault" {
-  source = "../../Modules/key-vault"
+  source = "../../modules/key-vault"
 
   key_vaults = var.key_vaults
 
@@ -295,7 +295,7 @@ module "key_vault" {
 # ============================================================
 
 module "monitoring" {
-  source = "../../Modules/monitoring"
+  source = "../../modules/monitoring"
 
   monitoring = var.monitoring
 
