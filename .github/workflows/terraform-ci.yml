@@ -1,0 +1,278 @@
+name: Terraform CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: "1.14.3"
+  TF_WORKING_DIR: "./env/dev"
+
+  ARM_USE_OIDC: true
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+
+  # ============================================================
+  # STAGE 1 - TERRAFORM FORMAT
+  # ============================================================
+
+  fmt:
+    name: Stage 1 - Terraform Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+
+  # ============================================================
+  # STAGE 2 - TERRAFORM INIT
+  # ============================================================
+
+  init:
+    name: Stage 2 - Terraform Init
+    runs-on: ubuntu-latest
+    needs: fmt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+
+  # ============================================================
+  # STAGE 3 - TERRAFORM VALIDATE
+  # ============================================================
+
+  validate:
+    name: Stage 3 - Terraform Validate
+    runs-on: ubuntu-latest
+    needs: init
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+
+  # ============================================================
+  # STAGE 4 - TFLINT
+  # ============================================================
+
+  tflint:
+    name: Stage 4 - TFLint
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Initialize TFLint
+        run: tflint --init
+
+      - name: Run TFLint
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: tflint --format compact
+
+
+  # ============================================================
+  # STAGE 5 - CHECKOV
+  # ============================================================
+
+  checkov:
+    name: Stage 5 - Checkov Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: false
+          soft_fail: false
+
+
+  # ============================================================
+  # STAGE 6 - TFSEC
+  # ============================================================
+
+  tfsec:
+    name: Stage 6 - tfsec Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: .
+          soft_fail: false
+
+
+  # ============================================================
+  # STAGE 7 - TERRAFORM PLAN
+  # ============================================================
+
+  plan:
+    name: Stage 7 - Terraform Plan
+    runs-on: ubuntu-latest
+
+    needs:
+      - tflint
+      - checkov
+      - tfsec
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -input=false \
+            -out=tfplan
+
+      - name: Generate Human Readable Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform show \
+            -no-color \
+            tfplan > tfplan.txt
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            env/dev/tfplan
+            env/dev/tfplan.txt
+          retention-days: 7
+
+
+  # ============================================================
+  # STAGE 8 - PRODUCTION APPROVAL + APPLY
+  # ============================================================
+
+  apply:
+    name: Stage 8 - Production Apply
+    runs-on: ubuntu-latest
+
+    needs:
+      - plan
+
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+
+    environment:
+      name: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Download Approved Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: ./env/dev
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false tfplan
