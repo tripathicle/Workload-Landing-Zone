@@ -15,7 +15,7 @@ variable "virtual_machines" {
 
     admin_username = string
 
-    admin_ssh_key = optional(string)
+    admin_ssh_key  = optional(string)
     admin_password = optional(string)
 
     source_image_reference = object({
