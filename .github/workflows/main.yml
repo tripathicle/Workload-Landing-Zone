@@ -1,0 +1,20 @@
+name: GitHub OIDC Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  oidc-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show GitHub identity
+        run: |
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Repository ID: $GITHUB_REPOSITORY_ID"
+          echo "Repository Owner ID: $GITHUB_REPOSITORY_OWNER_ID"
+          echo "Ref: $GITHUB_REF"
