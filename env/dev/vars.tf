@@ -353,39 +353,39 @@ variable "nsg_associations" {
 # ROUTE TABLES
 # ============================================================
 
-variable "route_tables" {
-  description = "Route table configuration."
+# variable "route_tables" {
+#   description = "Route table configuration."
 
-  type = map(object({
-    name               = string
-    resource_group_key = string
+#   type = map(object({
+#     name               = string
+#     resource_group_key = string
 
-    routes = optional(map(object({
-      name                   = string
-      address_prefix         = string
-      next_hop_type          = string
-      next_hop_in_ip_address = optional(string)
-    })), {})
-  }))
+#     routes = optional(map(object({
+#       name                   = string
+#       address_prefix         = string
+#       next_hop_type          = string
+#       next_hop_in_ip_address = optional(string)
+#     })), {})
+#   }))
 
-  default = {}
-}
+#   default = {}
+# }
 
 
 # ============================================================
 # ROUTE TABLE ASSOCIATIONS
 # ============================================================
 
-variable "route_table_associations" {
-  description = "Subnet to route table associations."
+# variable "route_table_associations" {
+#   description = "Subnet to route table associations."
 
-  type = map(object({
-    subnet_key      = string
-    route_table_key = string
-  }))
+#   type = map(object({
+#     subnet_key      = string
+#     route_table_key = string
+#   }))
 
-  default = {}
-}
+#   default = {}
+# }
 
 
 # ============================================================
@@ -946,47 +946,47 @@ variable "postgresql_admin_password" {
 # PRIVATE ENDPOINTS
 # ============================================================
 
-variable "private_endpoints" {
-  description = "Azure Private Endpoint configuration."
+# variable "private_endpoints" {
+#   description = "Azure Private Endpoint configuration."
 
-  type = map(object({
-    name               = string
-    resource_group_key = string
-    subnet_key         = string
+#   type = map(object({
+#     name               = string
+#     resource_group_key = string
+#     subnet_key         = string
 
-    private_service_connection = object({
-      name                           = string
-      private_connection_resource_id = string
-      subresource_names              = list(string)
-      is_manual_connection           = bool
-    })
+#     private_service_connection = object({
+#       name                           = string
+#       private_connection_resource_id = string
+#       subresource_names              = list(string)
+#       is_manual_connection           = bool
+#     })
 
-    private_dns_zone_group = optional(object({
-      name         = string
-      dns_zone_key = string
-    }))
-  }))
+#     private_dns_zone_group = optional(object({
+#       name         = string
+#       dns_zone_key = string
+#     }))
+#   }))
 
-  default = {}
+#   default = {}
 
-  validation {
-    condition = alltrue([
-      for key, pe in var.private_endpoints :
-      length(trimspace(pe.name)) > 0
-    ])
+#   validation {
+#     condition = alltrue([
+#       for key, pe in var.private_endpoints :
+#       length(trimspace(pe.name)) > 0
+#     ])
 
-    error_message = "Each Private Endpoint must define a non-empty name."
-  }
+#     error_message = "Each Private Endpoint must define a non-empty name."
+#   }
 
-  validation {
-    condition = alltrue([
-      for key, pe in var.private_endpoints :
-      length(pe.private_service_connection.subresource_names) > 0
-    ])
+#   validation {
+#     condition = alltrue([
+#       for key, pe in var.private_endpoints :
+#       length(pe.private_service_connection.subresource_names) > 0
+#     ])
 
-    error_message = "Each Private Endpoint must define at least one subresource name."
-  }
-}
+#     error_message = "Each Private Endpoint must define at least one subresource name."
+#   }
+# }
 
 
 # ============================================================
