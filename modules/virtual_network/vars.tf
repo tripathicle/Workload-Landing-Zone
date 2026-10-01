@@ -1,6 +1,6 @@
 # ============================================================
-# MODULE: VNET
-# FILE: Modules/vnet/variables.tf
+# MODULE: VIRTUAL NETWORK
+# FILE: modules/virtual_network/variables.tf
 # ============================================================
 
 variable "vnets" {
@@ -89,10 +89,9 @@ variable "vnets" {
       ])
     ])
 
-    error_message = "Each VNet DNS server must be a valid IPv4 CIDR/host address."
+    error_message = "Each VNet DNS server must be a valid IP address."
   }
 }
-
 
 variable "resource_groups" {
   description = "Resource Groups created by the Resource Group module."
@@ -109,7 +108,6 @@ variable "resource_groups" {
     error_message = "At least one resource group must be available to the VNet module."
   }
 }
-
 
 variable "tags" {
   description = "Common tags applied to all Virtual Networks."

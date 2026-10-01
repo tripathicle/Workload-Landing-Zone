@@ -23,6 +23,13 @@ variable "key_vaults" {
     enabled_for_template_deployment = optional(bool, false)
 
     enable_rbac_authorization = optional(bool, true)
+
+    network_acls = optional(object({
+      bypass                     = optional(string, "None")
+      default_action             = optional(string, "Deny")
+      ip_rules                   = optional(list(string), [])
+      virtual_network_subnet_ids = optional(list(string), [])
+    }), {})
   }))
 
   validation {
@@ -42,6 +49,30 @@ variable "key_vaults" {
     ])
 
     error_message = "Key Vault soft delete retention must be between 7 and 90 days."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vault in var.key_vaults :
+      contains(
+        ["AzureServices", "None"],
+        vault.network_acls.bypass
+      )
+    ])
+
+    error_message = "Key Vault network_acls.bypass must be AzureServices or None."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, vault in var.key_vaults :
+      contains(
+        ["Allow", "Deny"],
+        vault.network_acls.default_action
+      )
+    ])
+
+    error_message = "Key Vault network_acls.default_action must be Allow or Deny."
   }
 }
 

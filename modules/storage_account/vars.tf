@@ -1,17 +1,6 @@
 # ============================================================
 # MODULE: STORAGE ACCOUNT
-# FILE: Modules/storage_account/variables.tf
-# ============================================================
-#
-# Purpose:
-#   Defines reusable Storage Account input contract and
-#   validations.
-#
-# ============================================================
-
-
-# ============================================================
-# STORAGE ACCOUNTS
+# FILE: modules/storage_account/vars.tf
 # ============================================================
 
 variable "storage_accounts" {
@@ -26,24 +15,27 @@ variable "storage_accounts" {
     allow_nested_items_to_be_public  = optional(bool, false)
     public_network_access_enabled    = optional(bool, false)
     cross_tenant_replication_enabled = optional(bool, false)
-    tags                             = optional(map(string), {})
-  }))
 
-  # ----------------------------------------------------------
-  # Validation 01:
-  # At least one Storage Account must be defined.
-  # ----------------------------------------------------------
+    shared_access_key_enabled = optional(bool, false)
+
+    sas_expiration_period = optional(
+      string,
+      "7.00:00:00"
+    )
+
+    blob_delete_retention_days = optional(
+      number,
+      7
+    )
+
+    tags = optional(map(string), {})
+  }))
 
   validation {
     condition = length(var.storage_accounts) > 0
 
     error_message = "At least one storage account must be defined."
   }
-
-  # ----------------------------------------------------------
-  # Validation 02:
-  # Storage Account map keys must be non-empty.
-  # ----------------------------------------------------------
 
   validation {
     condition = alltrue([
@@ -54,11 +46,6 @@ variable "storage_accounts" {
     error_message = "Each storage account map key must be a non-empty string."
   }
 
-  # ----------------------------------------------------------
-  # Validation 03:
-  # Storage Account name must be non-empty.
-  # ----------------------------------------------------------
-
   validation {
     condition = alltrue([
       for storage_account_key, storage_account in var.storage_accounts :
@@ -67,14 +54,6 @@ variable "storage_accounts" {
 
     error_message = "Each storage account must define a non-empty name."
   }
-
-  # ----------------------------------------------------------
-  # Validation 04:
-  # Azure Storage Account name:
-  #   - 3 to 24 characters
-  #   - lowercase letters
-  #   - numbers
-  # ----------------------------------------------------------
 
   validation {
     condition = alltrue([
@@ -88,11 +67,6 @@ variable "storage_accounts" {
     error_message = "Each storage account name must be 3-24 characters and contain only lowercase letters and numbers."
   }
 
-  # ----------------------------------------------------------
-  # Validation 05:
-  # Resource Group key must be non-empty.
-  # ----------------------------------------------------------
-
   validation {
     condition = alltrue([
       for storage_account_key, storage_account in var.storage_accounts :
@@ -101,11 +75,6 @@ variable "storage_accounts" {
 
     error_message = "Each storage account must reference a non-empty resource_group_key."
   }
-
-  # ----------------------------------------------------------
-  # Validation 06:
-  # Account tier.
-  # ----------------------------------------------------------
 
   validation {
     condition = alltrue([
@@ -119,23 +88,11 @@ variable "storage_accounts" {
     error_message = "Storage account account_tier must be either Standard or Premium."
   }
 
-  # ----------------------------------------------------------
-  # Validation 07:
-  # Replication type.
-  # ----------------------------------------------------------
-
   validation {
     condition = alltrue([
       for storage_account_key, storage_account in var.storage_accounts :
       contains(
-        [
-          "LRS",
-          "GRS",
-          "RAGRS",
-          "ZRS",
-          "GZRS",
-          "RAGZRS"
-        ],
+        ["LRS", "GRS", "RAGRS", "ZRS", "GZRS", "RAGZRS"],
         storage_account.account_replication_type
       )
     ])
@@ -143,27 +100,39 @@ variable "storage_accounts" {
     error_message = "Storage account replication type must be one of LRS, GRS, RAGRS, ZRS, GZRS, or RAGZRS."
   }
 
-  # ----------------------------------------------------------
-  # Validation 08:
-  # Minimum TLS version.
-  # ----------------------------------------------------------
-
   validation {
     condition = alltrue([
       for storage_account_key, storage_account in var.storage_accounts :
       contains(
-        ["TLS1_2", "TLS1_3"],
+        ["TLS1_2"],
         storage_account.min_tls_version
       )
     ])
 
-    error_message = "Storage account min_tls_version must be TLS1_2 or TLS1_3."
+    error_message = "Storage account min_tls_version must be TLS1_2."
   }
 
-  # ----------------------------------------------------------
-  # Validation 09:
-  # Resource-specific tag keys and values must be non-empty.
-  # ----------------------------------------------------------
+  validation {
+    condition = alltrue([
+      for storage_account_key, storage_account in var.storage_accounts :
+      storage_account.blob_delete_retention_days >= 1 &&
+      storage_account.blob_delete_retention_days <= 365
+    ])
+
+    error_message = "Storage Account blob delete retention must be between 1 and 365 days."
+  }
+
+  validation {
+    condition = alltrue([
+      for storage_account_key, storage_account in var.storage_accounts :
+      can(regex(
+        "^[0-9]+\\.[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+        storage_account.sas_expiration_period
+      ))
+    ])
+
+    error_message = "Storage Account SAS expiration period must use D.HH:MM:SS or DD.HH:MM:SS format."
+  }
 
   validation {
     condition = alltrue([
@@ -178,12 +147,6 @@ variable "storage_accounts" {
     error_message = "Each storage account tag key and value must be non-empty."
   }
 
-  # ----------------------------------------------------------
-  # Validation 10:
-  # Resource-specific tag keys must contain supported
-  # characters.
-  # ----------------------------------------------------------
-
   validation {
     condition = alltrue([
       for storage_account_key, storage_account in var.storage_accounts :
@@ -197,6 +160,53 @@ variable "storage_accounts" {
     ])
 
     error_message = "Storage account tag keys contain unsupported characters."
+  }
+}
+
+
+# ============================================================
+# STORAGE CONTAINERS
+# ============================================================
+
+variable "storage_containers" {
+  description = "Map of Blob Storage containers to provision."
+
+  type = map(object({
+    name                  = string
+    storage_account_key   = string
+    container_access_type = optional(string, "private")
+  }))
+
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      length(trimspace(container.name)) > 0
+    ])
+
+    error_message = "Each storage container must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      length(trimspace(container.storage_account_key)) > 0
+    ])
+
+    error_message = "Each storage container must reference a non-empty storage_account_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      contains(
+        ["private", "blob", "container"],
+        container.container_access_type
+      )
+    ])
+
+    error_message = "Storage container access type must be private, blob, or container."
   }
 }
 
@@ -223,7 +233,7 @@ variable "resource_groups" {
 
 
 # ============================================================
-# COMMON TAGS
+# TAGS
 # ============================================================
 
 variable "tags" {
@@ -231,11 +241,6 @@ variable "tags" {
 
   type    = map(string)
   default = {}
-
-  # ----------------------------------------------------------
-  # Validation 01:
-  # Common tag keys and values must be non-empty.
-  # ----------------------------------------------------------
 
   validation {
     condition = alltrue([
@@ -246,11 +251,6 @@ variable "tags" {
 
     error_message = "Each common tag key and value must be non-empty."
   }
-
-  # ----------------------------------------------------------
-  # Validation 02:
-  # Common tag keys must use supported characters.
-  # ----------------------------------------------------------
 
   validation {
     condition = alltrue([

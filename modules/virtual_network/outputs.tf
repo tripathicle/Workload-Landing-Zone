@@ -1,3 +1,8 @@
+# ============================================================
+# MODULE: VIRTUAL NETWORK
+# FILE: modules/virtual_network/outputs.tf
+# ============================================================
+
 output "vnets" {
   description = "Map of provisioned Virtual Networks keyed by the input VNet key."
 

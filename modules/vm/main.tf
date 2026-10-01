@@ -3,6 +3,8 @@
 # ============================================================
 
 resource "azurerm_linux_virtual_machine" "this" {
+  #checkov:skip=CKV_AZURE_50:VM extensions are not installed by this module; Linux workload initialization is performed through cloud-init custom_data.
+
   for_each = {
     for vm_key, vm in var.virtual_machines :
     vm_key => vm
@@ -128,6 +130,9 @@ resource "azurerm_linux_virtual_machine" "this" {
 # ============================================================
 
 resource "azurerm_windows_virtual_machine" "this" {
+  #checkov:skip=CKV_AZURE_50:VM extensions are not installed by this module; no VM extension resource is provisioned.
+  #checkov:skip=CKV_AZURE_151:No Windows Virtual Machines are configured in the current dev environment; the workload currently deploys Linux Virtual Machines only.
+
   for_each = {
     for vm_key, vm in var.virtual_machines :
     vm_key => vm

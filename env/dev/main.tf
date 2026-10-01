@@ -17,9 +17,10 @@ module "resource_group" {
 module "storage_account" {
   source = "../../modules/storage_account"
 
-  storage_accounts = var.storage_accounts
-  resource_groups  = module.resource_group.resource_groups
-  tags             = var.tags
+  storage_accounts   = var.storage_accounts
+  storage_containers = var.storage_containers
+  resource_groups    = module.resource_group.resource_groups
+  tags               = var.tags
 }
 
 
@@ -209,6 +210,8 @@ module "sql" {
   resource_groups = module.resource_group.resource_groups
 
   administrator_password = var.sql_admin_password
+
+  vulnerability_assessment_storage = local.vulnerability_assessment_storage
 
   tags = var.tags
 }

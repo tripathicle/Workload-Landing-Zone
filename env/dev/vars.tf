@@ -105,6 +105,52 @@ variable "storage_accounts" {
   }
 }
 
+# ============================================================
+# STORAGE CONTAINERS
+# ============================================================
+
+variable "storage_containers" {
+  description = "Storage container configuration."
+
+  type = map(object({
+    name                  = string
+    storage_account_key   = string
+    container_access_type = optional(string, "private")
+  }))
+
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      length(trimspace(container.name)) > 0
+    ])
+
+    error_message = "Each storage container must define a non-empty name."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      length(trimspace(container.storage_account_key)) > 0
+    ])
+
+    error_message = "Each storage container must reference a non-empty storage_account_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, container in var.storage_containers :
+      contains(
+        ["private", "blob", "container"],
+        container.container_access_type
+      )
+    ])
+
+    error_message = "Storage container access type must be private, blob, or container."
+  }
+}
+
 
 # ============================================================
 # VIRTUAL NETWORKS
@@ -732,8 +778,10 @@ variable "bastions" {
 }
 
 
+
+
 # ============================================================
-# AZURE SQL
+# AZURE SQL SERVERS
 # ============================================================
 
 variable "sql_servers" {
@@ -760,6 +808,11 @@ variable "sql_servers" {
       false
     )
 
+    azuread_administrator = optional(object({
+      login_username = string
+      object_id      = string
+    }))
+
     database = optional(object({
       name                 = string
       sku_name             = string
@@ -767,6 +820,11 @@ variable "sql_servers" {
       zone_redundant       = optional(bool, false)
       storage_account_type = optional(string, "Local")
     }))
+
+    vulnerability_assessment = object({
+      email_subscription_admins = bool
+      emails                    = list(string)
+    })
   }))
 
   validation {
