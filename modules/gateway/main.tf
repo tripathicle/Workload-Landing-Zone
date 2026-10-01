@@ -118,31 +118,31 @@ resource "azurerm_application_gateway" "this" {
   # Frontend Health Probe
   # ----------------------------------------------------------
 
- probe {
-  name                                      = each.value.frontend_backend.probe_name
-  protocol                                  = "Http"
-  host                                      = "127.0.0.1"
-  path                                      = each.value.frontend_backend.probe_path
-  interval                                  = 30
-  timeout                                   = 30
-  unhealthy_threshold                       = 3
-  pick_host_name_from_backend_http_settings = false
-}
+  probe {
+    name                                      = each.value.frontend_backend.probe_name
+    protocol                                  = "Http"
+    host                                      = "127.0.0.1"
+    path                                      = each.value.frontend_backend.probe_path
+    interval                                  = 30
+    timeout                                   = 30
+    unhealthy_threshold                       = 3
+    pick_host_name_from_backend_http_settings = false
+  }
 
   # ----------------------------------------------------------
   # Backend Health Probe
   # ----------------------------------------------------------
 
   probe {
-  name                                      = each.value.backend_backend.probe_name
-  protocol                                  = "Http"
-  host                                      = "127.0.0.1"
-  path                                      = each.value.backend_backend.probe_path
-  interval                                  = 30
-  timeout                                   = 30
-  unhealthy_threshold                       = 3
-  pick_host_name_from_backend_http_settings = false
-}
+    name                                      = each.value.backend_backend.probe_name
+    protocol                                  = "Http"
+    host                                      = "127.0.0.1"
+    path                                      = each.value.backend_backend.probe_path
+    interval                                  = 30
+    timeout                                   = 30
+    unhealthy_threshold                       = 3
+    pick_host_name_from_backend_http_settings = false
+  }
 
   # ----------------------------------------------------------
   # Frontend HTTP Settings
