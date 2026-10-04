@@ -13,7 +13,7 @@ terraform {
     storage_account_name = "sttfstatehubandspokewl"
     container_name       = "tfstate"
     key                  = "workload/dev.tfstate"
-     use_azuread_auth     = true
+    use_azuread_auth     = true
   }
 }
 
